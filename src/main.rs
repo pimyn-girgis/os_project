@@ -1,4 +1,4 @@
-use libc::{self, pid_t};
+use libc::{self, pid_t, sysinfo};
 use std::fs;
 use std::io;
 
@@ -80,6 +80,20 @@ fn list_processes() -> io::Result<Vec<ProcessInfo>> {
 fn main() -> io::Result<()> {
   println!("PID\tPPID\tSTATE\tMEM(KB)\tNAME");
   println!("{}", "-".repeat(50));
+
+  unsafe {
+    let mut system_info: sysinfo = std::mem::zeroed();
+    sysinfo(&mut system_info as *mut sysinfo);
+    let mem_unit = 1_000_000 / system_info.mem_unit as u64;
+    println!("totalram: {}", system_info.totalram/mem_unit);
+    println!("sharedram: {}", system_info.sharedram/mem_unit);
+    println!("freeram: {}", system_info.freeram/mem_unit);
+    println!("bufferram: {}", system_info.bufferram/mem_unit);
+    println!("totalswap: {}", system_info.totalswap/mem_unit);
+    println!("freeswap: {}", system_info.freeswap/mem_unit);
+    println!("uptime: {}", system_info.uptime);
+    println!("loads: {:?}", system_info.loads);
+  };
 
   match list_processes() {
     Ok(mut processes) => {
