@@ -1,7 +1,10 @@
+use core::panic;
+use getopts::Options;
 use libc::{self, pid_t, sysinfo};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
+use std::time::Duration;
 
 struct ProcessInfo {
   pid: pid_t,
@@ -87,37 +90,56 @@ fn list_processes() -> io::Result<Vec<ProcessInfo>> {
   Ok(processes)
 }
 
-fn main() -> io::Result<()> {
-  unsafe {
-    let mut system_info: sysinfo = std::mem::zeroed();
-    sysinfo(&mut system_info as *mut sysinfo);
-    let mem_unit = 1_000_000 / system_info.mem_unit as u64;
-    println!("totalram: {}", system_info.totalram / mem_unit);
-    println!("sharedram: {}", system_info.sharedram / mem_unit);
-    println!("freeram: {}", system_info.freeram / mem_unit);
-    println!("bufferram: {}", system_info.bufferram / mem_unit);
-    println!("totalswap: {}", system_info.totalswap / mem_unit);
-    println!("freeswap: {}", system_info.freeswap / mem_unit);
-    println!("uptime: {}", system_info.uptime);
-    println!("loads: {:?}", system_info.loads);
+fn main() {
+  let args: Vec<String> = std::env::args().collect();
+  let mut opts = Options::new();
+  opts.optopt("r", "refresh_rate", "How often to update the output", "NUM");
+  let matches = match opts.parse(&args[1..]) {
+    Ok(m) => m,
+    Err(f) => {
+      panic!("{}", f);
+    }
   };
 
-  println!("PID\tPPID\tSTATE\tMEM(KB)\tNAME");
-  println!("{}", "-".repeat(50));
-  match list_processes() {
-    Ok(mut processes) => {
-      processes.sort_by_key(|p| p.pid);
-      for process in processes {
-        println!(
-          "{}\t{}\t{}\t{}\t{}",
-          process.pid, process.ppid, process.state, process.memory, process.name
-        );
+  let refresh_rate = match matches.opt_get_default::<u64>("r", 1) {
+    Ok(r) => r,
+    Err(f) => {
+      panic!("{}", f);
+    }
+  };
+
+  loop {
+    unsafe {
+      print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
+      let mut system_info: sysinfo = std::mem::zeroed();
+      sysinfo(&mut system_info as *mut sysinfo);
+      let mem_unit = 1_000_000 / system_info.mem_unit as u64;
+      println!("totalram: {}", system_info.totalram / mem_unit);
+      println!("sharedram: {}", system_info.sharedram / mem_unit);
+      println!("freeram: {}", system_info.freeram / mem_unit);
+      println!("bufferram: {}", system_info.bufferram / mem_unit);
+      println!("totalswap: {}", system_info.totalswap / mem_unit);
+      println!("freeswap: {}", system_info.freeswap / mem_unit);
+      println!("uptime: {}", system_info.uptime);
+      println!("loads: {:?}", system_info.loads);
+    };
+
+    println!("PID\tPPID\tSTATE\tMEM(KB)\tNAME");
+    println!("{}", "-".repeat(50));
+    match list_processes() {
+      Ok(mut processes) => {
+        processes.sort_by_key(|p| p.pid);
+        for process in processes {
+          println!(
+            "{}\t{}\t{}\t{}\t{}",
+            process.pid, process.ppid, process.state, process.memory, process.name
+          );
+        }
       }
-      Ok(())
+      Err(e) => {
+        eprintln!("Error listing processes: {}", e);
+      }
     }
-    Err(e) => {
-      eprintln!("Error listing processes: {}", e);
-      Err(e)
-    }
+    std::thread::sleep(Duration::from_secs(refresh_rate));
   }
 }
