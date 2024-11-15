@@ -98,13 +98,11 @@ fn get_cpu_usage() -> io::Result<Vec<f64>> {
     if line.starts_with("cpu") {
       let values: Vec<&str> = line.split_whitespace().collect();
       if values[0] == "cpu" {
-        // Aggregate the values for total CPU usage (excluding idle)
         let total: u64 = values[1..].iter().take(7).map(|&s| s.parse::<u64>().unwrap_or(0)).sum();
         let idle: u64 = values[4].parse().unwrap_or(0);
         let usage = (total - idle) as f64 / total as f64 * 100.0;
         cpu_usage.push(usage);
       } else {
-        // Handle individual cores
         let core_usage: u64 = values[1..].iter().take(7).map(|&s| s.parse::<u64>().unwrap_or(0)).sum();
         let core_idle: u64 = values[4].parse().unwrap_or(0);
         let core_percent = (core_usage - core_idle) as f64 / core_usage as f64 * 100.0;
@@ -155,9 +153,9 @@ fn main() {
           println!("CPU Usage:");
           for (i, usage) in cpu_usage.iter().enumerate() {
               if i == 0 {
-                  println!("Total CPU: {:.2}%", usage);  // Label the first entry as Total CPU
+                  println!("Total CPU: {:.2}%", usage); 
               } else {
-                  println!("Core {}: {:.2}%", i, usage);  // Label subsequent entries as Core 1, Core 2, etc.
+                  println!("Core {}: {:.2}%", i, usage);
               }
           }
       }
