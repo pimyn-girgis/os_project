@@ -11,8 +11,14 @@ struct ProcessInfo {
   ppid: pid_t,
   name: String,
   state: char,
-  memory: u64,
+  memory: u64, // VmRSS in KB
+  exe_path: String,
+  thread_count: u64,
+  virtual_memory: u64, // VmSize in KB
+  user_time: u64, // User CPU time
+  system_time: u64, // System CPU time
 }
+
 
 fn parse_status_line(line: &str) -> io::Result<(String, Vec<String>)> {
   let line_parts: Vec<&str> = line.split(':').collect();
@@ -52,22 +58,31 @@ fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
   let status_path = format!("/proc/{}/status", pid);
   let status_map = parse_status_file(&status_path)?;
 
-  let info = ProcessInfo {
-    pid,
-    ppid: status_map["PPid"][0].parse().unwrap_or_default(),
-    name: status_map["Name"][0].clone(),
-    state: status_map["State"][0].chars().next().unwrap_or_default(),
-    memory: {
-      if let Some(vm_rss) = status_map.get("VmRSS") {
-        vm_rss[0].parse::<u64>().unwrap()
-      } else {
-        0
-      }
-    },
+  let exe_path = format!("/proc/{}/exe", pid);
+  let exe_path_str = fs::read_link(exe_path).unwrap_or_else(|_| "N/A".into());
+
+  let process_info = ProcessInfo {
+      pid,
+      ppid: status_map["PPid"][0].parse().unwrap_or_default(),
+      name: status_map["Name"][0].clone(),
+      state: status_map["State"][0].chars().next().unwrap_or_default(),
+      memory: {
+          if let Some(vm_rss) = status_map.get("VmRSS") {
+              vm_rss[0].parse::<u64>().unwrap_or_default()
+          } else {
+              0
+          }
+      },
+      exe_path: exe_path_str.to_string_lossy().to_string(),
+      thread_count: status_map.get("Threads").and_then(|v| v[0].parse().ok()).unwrap_or(0),
+      virtual_memory: status_map.get("VmSize").and_then(|v| v[0].parse().ok()).unwrap_or(0),
+      user_time: status_map.get("Utime").and_then(|v| v[0].parse().ok()).unwrap_or(0),
+      system_time: status_map.get("Stime").and_then(|v| v[0].parse().ok()).unwrap_or(0),
   };
 
-  Ok(info)
+  Ok(process_info)
 }
+
 
 fn list_processes() -> io::Result<Vec<ProcessInfo>> {
   let mut processes = Vec::new();
@@ -162,22 +177,36 @@ fn main() {
       Err(e) => eprintln!("Error retrieving CPU usage: {}", e),
   }  
 
-    println!("PID\tPPID\tSTATE\tMEM(KB)\tNAME");
-    println!("{}", "-".repeat(50));
-    match list_processes() {
-      Ok(mut processes) => {
-        processes.sort_by_key(|p| p.pid);
+
+// Print the table header with aligned labels
+println!("{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}", 
+         "PID", "PPID", "STATE", "MEM(KB)", "THREADS", "VIRT_MEM(KB)", "USER_TIME", "SYS_TIME", "EXE PATH");
+println!("{}", "-".repeat(90)); // Adjusted width
+
+match list_processes() {
+    Ok(mut processes) => {
+        processes.sort_by_key(|p| p.pid); // Sort processes by PID
         for process in processes {
-          println!(
-            "{}\t{}\t{}\t{}\t{}",
-            process.pid, process.ppid, process.state, process.memory, process.name
-          );
+            // Format the table rows and print them
+            println!(
+                "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}",
+                process.pid,                            // PID
+                process.ppid,                           // PPID
+                process.state,                          // Process state
+                process.memory,                         // Memory usage
+                process.thread_count,                   // Thread count
+                process.virtual_memory,                 // Virtual memory
+                process.user_time,                      // User time
+                process.system_time,                    // System time
+                process.exe_path                       // Executable path
+            );
         }
-      }
-      Err(e) => {
-        eprintln!("Error listing processes: {}", e);
-      }
     }
-    std::thread::sleep(Duration::from_secs(refresh_rate));
+    Err(e) => {
+        eprintln!("Error listing processes: {}", e);
+    }
+}
+  
+  std::thread::sleep(Duration::from_secs(refresh_rate));
   }
 }
