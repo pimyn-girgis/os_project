@@ -178,27 +178,26 @@ fn main() {
   }  
 
 
-// Print the table header with aligned labels
 println!("{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}", 
          "PID", "PPID", "STATE", "MEM(KB)", "THREADS", "VIRT_MEM(KB)", "USER_TIME", "SYS_TIME", "EXE PATH");
-println!("{}", "-".repeat(90)); // Adjusted width
+println!("{}", "-".repeat(90)); 
 
 match list_processes() {
     Ok(mut processes) => {
-        processes.sort_by_key(|p| p.pid); // Sort processes by PID
+        processes.sort_by_key(|p| p.pid); 
         for process in processes {
-            // Format the table rows and print them
+            
             println!(
                 "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}",
-                process.pid,                            // PID
-                process.ppid,                           // PPID
-                process.state,                          // Process state
-                process.memory,                         // Memory usage
-                process.thread_count,                   // Thread count
-                process.virtual_memory,                 // Virtual memory
-                process.user_time,                      // User time
-                process.system_time,                    // System time
-                process.exe_path                       // Executable path
+                process.pid,                           
+                process.ppid,                          
+                process.state,                         
+                process.memory,                        
+                process.thread_count,                  
+                process.virtual_memory,                
+                process.user_time,                     
+                process.system_time,                   
+                process.exe_path                       
             );
         }
     }
