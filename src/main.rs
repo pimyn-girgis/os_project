@@ -90,6 +90,32 @@ fn list_processes() -> io::Result<Vec<ProcessInfo>> {
   Ok(processes)
 }
 
+fn get_cpu_usage() -> io::Result<Vec<f64>> {
+  let mut cpu_usage = Vec::new();
+
+  let stat_content = fs::read_to_string("/proc/stat")?;
+  for line in stat_content.lines() {
+    if line.starts_with("cpu") {
+      let values: Vec<&str> = line.split_whitespace().collect();
+      if values[0] == "cpu" {
+        // Aggregate the values for total CPU usage (excluding idle)
+        let total: u64 = values[1..].iter().take(7).map(|&s| s.parse::<u64>().unwrap_or(0)).sum();
+        let idle: u64 = values[4].parse().unwrap_or(0);
+        let usage = (total - idle) as f64 / total as f64 * 100.0;
+        cpu_usage.push(usage);
+      } else {
+        // Handle individual cores
+        let core_usage: u64 = values[1..].iter().take(7).map(|&s| s.parse::<u64>().unwrap_or(0)).sum();
+        let core_idle: u64 = values[4].parse().unwrap_or(0);
+        let core_percent = (core_usage - core_idle) as f64 / core_usage as f64 * 100.0;
+        cpu_usage.push(core_percent);
+      }
+    }
+  }
+
+  Ok(cpu_usage)
+}
+
 fn main() {
   let args: Vec<String> = std::env::args().collect();
   let mut opts = Options::new();
@@ -123,6 +149,20 @@ fn main() {
       println!("uptime: {}", system_info.uptime);
       println!("loads: {:?}", system_info.loads);
     };
+
+    match get_cpu_usage() {
+      Ok(cpu_usage) => {
+          println!("CPU Usage:");
+          for (i, usage) in cpu_usage.iter().enumerate() {
+              if i == 0 {
+                  println!("Total CPU: {:.2}%", usage);  // Label the first entry as Total CPU
+              } else {
+                  println!("Core {}: {:.2}%", i, usage);  // Label subsequent entries as Core 1, Core 2, etc.
+              }
+          }
+      }
+      Err(e) => eprintln!("Error retrieving CPU usage: {}", e),
+  }  
 
     println!("PID\tPPID\tSTATE\tMEM(KB)\tNAME");
     println!("{}", "-".repeat(50));
