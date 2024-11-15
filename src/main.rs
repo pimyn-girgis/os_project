@@ -11,12 +11,12 @@ struct ProcessInfo {
   ppid: pid_t,
   name: String,
   state: char,
-  memory: u64, // VmRSS in KB
+  memory: u64,
   exe_path: String,
   thread_count: u64,
-  virtual_memory: u64, // VmSize in KB
-  user_time: u64, // User CPU time
-  system_time: u64, // System CPU time
+  virtual_memory: u64, 
+  user_time: u64, 
+  system_time: u64,
 }
 
 
