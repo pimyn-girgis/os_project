@@ -4,6 +4,7 @@ use std::io::{self, Write};
 use std::process::exit;
 use std::process::{Command};
 use std::env;
+use affinity::{get_core_num, set_thread_affinity, get_thread_affinity};
 
 struct ProcessInfo {
     pid: pid_t,
