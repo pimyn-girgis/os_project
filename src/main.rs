@@ -6,6 +6,7 @@ use std::fs;
 use std::io;
 use std::time::Duration;
 use std::{thread};
+use std::io::Write;
 
 struct ProcessInfo {
     pid: pid_t,
@@ -168,47 +169,53 @@ fn main() {
     };
 
     loop {
+        // Use buffering to accumulate and write output in one go
+        let mut output = String::new();
+
         unsafe {
-            print!("{esc}[2J{esc}[1;1H", esc = 27 as char);
             let mut system_info: sysinfo = std::mem::zeroed();
             sysinfo(&mut system_info as *mut sysinfo);
             let mem_unit = 1_000_000 / system_info.mem_unit as u64;
-            println!("totalram: {}", system_info.totalram / mem_unit);
-            println!("sharedram: {}", system_info.sharedram / mem_unit);
-            println!("freeram: {}", system_info.freeram / mem_unit);
-            println!("bufferram: {}", system_info.bufferram / mem_unit);
-            println!("totalswap: {}", system_info.totalswap / mem_unit);
-            println!("freeswap: {}", system_info.freeswap / mem_unit);
-            println!("uptime: {}", system_info.uptime);
-            println!("loads: {:?}", system_info.loads);
+
+            output.push_str(&format!(
+                "totalram: {}\nsharedram: {}\nfreeram: {}\nbufferram: {}\ntotalswap: {}\nfreeswap: {}\nuptime: {}\nloads: {:?}\n",
+                system_info.totalram / mem_unit,
+                system_info.sharedram / mem_unit,
+                system_info.freeram / mem_unit,
+                system_info.bufferram / mem_unit,
+                system_info.totalswap / mem_unit,
+                system_info.freeswap / mem_unit,
+                system_info.uptime,
+                system_info.loads
+            ));
         }
 
         match get_cpu_usage() {
             Ok(cpu_usage) => {
-                println!("CPU Usage:");
+                output.push_str("CPU Usage:\n");
                 for (i, usage) in cpu_usage.iter().enumerate() {
                     if i == 0 {
-                        println!("Total CPU: {:.2}%", usage);
+                        output.push_str(&format!("Total CPU: {:.2}%\n", usage));
                     } else {
-                        println!("Core {}: {:.2}%", i, usage);
+                        output.push_str(&format!("Core {}: {:.2}%\n", i, usage));
                     }
                 }
             }
-            Err(e) => eprintln!("Error retrieving CPU usage: {}", e),
+            Err(e) => output.push_str(&format!("Error retrieving CPU usage: {}\n", e)),
         }
 
-        println!(
-            "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}",
+        output.push_str(&format!(
+            "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}\n",
             "PID", "PPID", "STATE", "MEM(KB)", "THREADS", "VIRT_MEM(KB)", "USER_TIME", "SYS_TIME", "EXE PATH"
-        );
-        println!("{}", "-".repeat(90));
+        ));
+        output.push_str(&format!("{}\n", "-".repeat(100)));
 
         match list_processes() {
             Ok(mut processes) => {
                 processes.sort_by_key(|p| p.pid);
                 for process in processes {
-                    println!(
-                        "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}",
+                    output.push_str(&format!(
+                        "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}\n",
                         process.pid,
                         process.ppid,
                         process.state,
@@ -218,13 +225,17 @@ fn main() {
                         process.user_time,
                         process.system_time,
                         process.exe_path
-                    );
+                    ));
                 }
             }
             Err(e) => {
-                eprintln!("Error listing processes: {}", e);
+                output.push_str(&format!("Error listing processes: {}\n", e));
             }
         }
+
+        // Clear screen and display all at once
+        print!("{esc}[2J{esc}[1;1H{}", output, esc = 27 as char);
+        std::io::stdout().flush().unwrap();
 
         std::thread::sleep(Duration::from_secs(refresh_rate));
     }
