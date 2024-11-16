@@ -5,6 +5,7 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::time::Duration;
+use std::{thread};
 
 struct ProcessInfo {
     pid: pid_t,
@@ -103,33 +104,46 @@ fn list_processes() -> io::Result<Vec<ProcessInfo>> {
     Ok(processes)
 }
 
-fn get_cpu_usage() -> io::Result<Vec<f64>> {
-    let mut cpu_usage = Vec::new();
 
-    let stat_content = fs::read_to_string("/proc/stat")?;
-    for line in stat_content.lines() {
-        if line.starts_with("cpu") {
-            let values: Vec<&str> = line.split_whitespace().collect();
-            if values[0] == "cpu" {
+fn get_cpu_usage() -> io::Result<Vec<f64>> {
+    fn parse_cpu_stats(content: &str) -> Vec<(u64, u64)> {
+        let mut stats = Vec::new();
+        for line in content.lines() {
+            if line.starts_with("cpu") {
+                let values: Vec<&str> = line.split_whitespace().collect();
                 let total: u64 = values[1..]
                     .iter()
                     .take(7)
                     .map(|&s| s.parse::<u64>().unwrap_or(0))
                     .sum();
                 let idle: u64 = values[4].parse().unwrap_or(0);
-                let usage = (total - idle) as f64 / total as f64 * 100.0;
-                cpu_usage.push(usage);
-            } else {
-                let core_usage: u64 = values[1..]
-                    .iter()
-                    .take(7)
-                    .map(|&s| s.parse::<u64>().unwrap_or(0))
-                    .sum();
-                let core_idle: u64 = values[4].parse().unwrap_or(0);
-                let core_percent = (core_usage - core_idle) as f64 / core_usage as f64 * 100.0;
-                cpu_usage.push(core_percent);
+                stats.push((total, idle));
             }
         }
+        stats
+    }
+
+    let stat_content1 = fs::read_to_string("/proc/stat")?;
+    let stats1 = parse_cpu_stats(&stat_content1);
+    thread::sleep(Duration::from_secs(1));
+    let stat_content2 = fs::read_to_string("/proc/stat")?;
+    let stats2 = parse_cpu_stats(&stat_content2);
+
+    let mut cpu_usage = Vec::new();
+    for (stat1, stat2) in stats1.iter().zip(stats2.iter()) {
+        let (total1, idle1) = stat1;
+        let (total2, idle2) = stat2;
+
+        let total_diff = total2 - total1;
+        let idle_diff = idle2 - idle1;
+
+        let usage = if total_diff > 0 {
+            (total_diff - idle_diff) as f64 / total_diff as f64 * 100.0
+        } else {
+            0.0
+        };
+
+        cpu_usage.push(usage);
     }
 
     Ok(cpu_usage)
