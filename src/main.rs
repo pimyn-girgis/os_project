@@ -1,17 +1,17 @@
 use core::panic;
-use getopts::Options;
-use libc::{self, pid_t, sysinfo,sched_setaffinity, CPU_SET, CPU_ZERO, cpu_set_t};
-use std::collections::HashMap;
-use std::fs;
-use std::io;
-use std::time::Duration;
-use std::{thread};
-use std::io::Write;
 use crossterm::{
     event::{self, Event, KeyCode},
     execute,
     terminal::{self, Clear, ClearType},
 };
+use getopts::Options;
+use libc::{self, cpu_set_t, pid_t, sched_setaffinity, sysinfo, CPU_SET, CPU_ZERO};
+use std::collections::HashMap;
+use std::fs;
+use std::io;
+use std::io::Write;
+use std::thread;
+use std::time::Duration;
 
 struct ProcessInfo {
     pid: pid_t,
@@ -74,21 +74,20 @@ fn bind_to_cpu_set(pid: pid_t, cpu_ids: &Vec<usize>) -> io::Result<()> {
     }
 
     // Set the CPU affinity for the given process
-    let result = unsafe {
-        sched_setaffinity(pid, std::mem::size_of::<cpu_set_t>(), &cpuset as *const _)
-    };
+    let result =
+        unsafe { sched_setaffinity(pid, std::mem::size_of::<cpu_set_t>(), &cpuset as *const _) };
 
     if result == 0 {
         println!("Process {} bound to CPUs {:?}", pid, cpu_ids);
         Ok(())
     } else {
-        eprintln!("Failed to set CPU affinity for process {}. Error: {:?}", pid, io::Error::last_os_error());
+        eprintln!(
+            "Failed to set CPU affinity for process {}. Error: {:?}",
+            pid,
+            io::Error::last_os_error()
+        );
         Err(io::Error::last_os_error())
     }
-}
-
-fn is_root() -> bool {
-    unsafe { libc::getuid() == 0 }
 }
 
 // Read process info from /proc/<pid>/status and /proc/<pid>/stat
@@ -113,10 +112,22 @@ fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
             }
         },
         exe_path: exe_path_str.to_string_lossy().to_string(),
-        thread_count: status_map.get("Threads").and_then(|v| v[0].parse().ok()).unwrap_or(0),
-        virtual_memory: status_map.get("VmSize").and_then(|v| v[0].parse().ok()).unwrap_or(0),
-        user_time: status_map.get("Utime").and_then(|v| v[0].parse().ok()).unwrap_or(0),
-        system_time: status_map.get("Stime").and_then(|v| v[0].parse().ok()).unwrap_or(0),
+        thread_count: status_map
+            .get("Threads")
+            .and_then(|v| v[0].parse().ok())
+            .unwrap_or(0),
+        virtual_memory: status_map
+            .get("VmSize")
+            .and_then(|v| v[0].parse().ok())
+            .unwrap_or(0),
+        user_time: status_map
+            .get("Utime")
+            .and_then(|v| v[0].parse().ok())
+            .unwrap_or(0),
+        system_time: status_map
+            .get("Stime")
+            .and_then(|v| v[0].parse().ok())
+            .unwrap_or(0),
     };
 
     Ok(process_info)
@@ -143,7 +154,6 @@ fn list_processes() -> io::Result<Vec<ProcessInfo>> {
 
     Ok(processes)
 }
-
 
 fn get_cpu_usage() -> io::Result<Vec<f64>> {
     fn parse_cpu_stats(content: &str) -> Vec<(u64, u64)> {
@@ -208,52 +218,53 @@ fn main() {
     };
 
     loop {
-                // Listen for keyboard events to bind processes
-                if event::poll(Duration::from_millis(1000)).unwrap() {
-                    if let Event::Key(event) = event::read().unwrap() {
-                        match event.code {
-                            KeyCode::Char('p') => {
-                                // Get PID and CPU IDs from the user
-                                println!("'p' key pressed");
-                                let mut input = String::new();
-                                println!("Enter the PID of the process to bind:");
-                                io::stdin().read_line(&mut input).unwrap();
-                                let pid: pid_t = match input.trim().parse() {
-                                    Ok(pid) => pid,
-                                    Err(_) => {
-                                        eprintln!("Invalid PID. Returning to main menu.");
-                                        continue; // Skip this iteration
-                                    }
-                                };
-                            
-                                input.clear();
-                                println!("Enter the CPU IDs to bind the process to (comma-separated):");
-                                io::stdin().read_line(&mut input).unwrap();
-                                let cpu_ids: Vec<usize> = input
-                                    .trim()
-                                    .split(',')
-                                    .filter_map(|s| s.trim().parse().ok())
-                                    .map(|id: usize| id - 1)  // Subtract 1 from each CPU ID as the CPU are zero based
-                                    .collect();
-                            
-                                if cpu_ids.is_empty() {
-                                    eprintln!("No valid CPU IDs provided. Returning to main menu.");
-                                    continue;
-                                }
-                            
-                                match bind_to_cpu_set(pid, &cpu_ids) {
-                                    Ok(_) => println!("Successfully bound process {} to CPUs {:?}", pid, cpu_ids),
-                                    Err(e) => eprintln!("Failed to bind process: {}", e),
-                                }
+        // Listen for keyboard events to bind processes
+        if event::poll(Duration::from_millis(1000)).unwrap() {
+            if let Event::Key(event) = event::read().unwrap() {
+                match event.code {
+                    KeyCode::Char('p') => {
+                        // Get PID and CPU IDs from the user
+                        println!("'p' key pressed");
+                        let mut input = String::new();
+                        println!("Enter the PID of the process to bind:");
+                        io::stdin().read_line(&mut input).unwrap();
+                        let pid: pid_t = match input.trim().parse() {
+                            Ok(pid) => pid,
+                            Err(_) => {
+                                eprintln!("Invalid PID. Returning to main menu.");
+                                continue; // Skip this iteration
                             }
-                            _ => {
-                                // Handle all other keys
-                                println!("Unhandled key pressed: {:?}", event.code);
+                        };
+
+                        input.clear();
+                        println!("Enter the CPU IDs to bind the process to (comma-separated):");
+                        io::stdin().read_line(&mut input).unwrap();
+                        let cpu_ids: Vec<usize> = input
+                            .trim()
+                            .split(',')
+                            .filter_map(|s| s.trim().parse().ok())
+                            .map(|id: usize| id - 1) // Subtract 1 from each CPU ID as the CPU are zero based
+                            .collect();
+
+                        if cpu_ids.is_empty() {
+                            eprintln!("No valid CPU IDs provided. Returning to main menu.");
+                            continue;
+                        }
+
+                        match bind_to_cpu_set(pid, &cpu_ids) {
+                            Ok(_) => {
+                                println!("Successfully bound process {} to CPUs {:?}", pid, cpu_ids)
                             }
-                        } 
-                        
+                            Err(e) => eprintln!("Failed to bind process: {}", e),
+                        }
+                    }
+                    _ => {
+                        // Handle all other keys
+                        println!("Unhandled key pressed: {:?}", event.code);
                     }
                 }
+            }
+        }
         // Use buffering to accumulate and write output in one go
         let mut output = String::new();
 
@@ -291,7 +302,15 @@ fn main() {
 
         output.push_str(&format!(
             "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}\n",
-            "PID", "PPID", "STATE", "MEM(KB)", "THREADS", "VIRT_MEM(KB)", "USER_TIME", "SYS_TIME", "EXE PATH"
+            "PID",
+            "PPID",
+            "STATE",
+            "MEM(KB)",
+            "THREADS",
+            "VIRT_MEM(KB)",
+            "USER_TIME",
+            "SYS_TIME",
+            "EXE PATH"
         ));
         output.push_str(&format!("{}\n", "-".repeat(100)));
 
