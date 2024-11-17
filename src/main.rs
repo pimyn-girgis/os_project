@@ -1,9 +1,4 @@
 use core::panic;
-use crossterm::{
-    event::{self, Event, KeyCode},
-    execute,
-    terminal::{self, Clear, ClearType},
-};
 use getopts::Options;
 use libc::{self, cpu_set_t, pid_t, sched_setaffinity, sysinfo, CPU_SET, CPU_ZERO};
 use std::collections::HashMap;
@@ -339,24 +334,6 @@ fn get_priority(pid: pid_t) -> i32 {
   unsafe { libc::getpriority(libc::PRIO_PROCESS, pid.try_into().unwrap()) }
 }
 
-fn parse_cpu_affinity(input: &str) -> (pid_t, Vec<usize>) {
-  let parts: Vec<&str> = input.split_whitespace().collect();
-  if parts.len() < 2 {
-      panic!("Invalid CPU affinity format. Must be <PID> <CPU_LIST>");
-  }
-
-  let process_id: pid_t = parts[0]
-      .parse()
-      .expect("Invalid PID value in CPU affinity list");
-
-  let cpus: Vec<usize> = parts[1..]
-      .iter()
-      .map(|&cpu| cpu.parse().expect("Invalid CPU index"))
-      .collect();
-
-  (process_id, cpus)
-}
-
 fn main() {
   let args: Vec<String> = std::env::args().collect();
   let mut opts = Options::new();
@@ -387,7 +364,7 @@ fn main() {
     print_usage(&args[0], opts);
     return;
   }
-  
+
   let pid = matches
     .opt_get_default::<pid_t>("pid", 0)
     .expect("Invalid pid value");
@@ -405,10 +382,10 @@ fn main() {
       set_priority(pid, priority)
     }
     else if matches.opt_present("c") {
-      let cpu_list: Vec<usize> = args[2..].iter() 
-      .map(|arg| arg.parse::<usize>().expect("Invalid CPU value")) 
+      let cpu_list: Vec<usize> = args[2..].iter()
+      .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
       .collect();
-      bind_to_cpu_set(pid, &cpu_list);
+      let _ = bind_to_cpu_set(pid, &cpu_list);
   }
     return;
   }
