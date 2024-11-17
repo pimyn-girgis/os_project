@@ -10,10 +10,6 @@ use std::collections::HashMap;
 use std::fs;
 use std::io;
 use std::io::Write;
-<<<<<<< HEAD
-use std::thread;
-=======
->>>>>>> 8c380b925df2d696db29ca5bc2fbc260bf54769c
 use std::time::Duration;
 
 struct ProcessInfo {
@@ -131,42 +127,7 @@ fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
     priority: get_priority(pid),
   };
 
-<<<<<<< HEAD
-    let process_info = ProcessInfo {
-        pid,
-        ppid: status_map["PPid"][0].parse().unwrap_or_default(),
-        name: status_map["Name"][0].clone(),
-        state: status_map["State"][0].chars().next().unwrap_or_default(),
-        memory: {
-            if let Some(vm_rss) = status_map.get("VmRSS") {
-                vm_rss[0].parse::<u64>().unwrap_or_default()
-            } else {
-                0
-            }
-        },
-        exe_path: exe_path_str.to_string_lossy().to_string(),
-        thread_count: status_map
-            .get("Threads")
-            .and_then(|v| v[0].parse().ok())
-            .unwrap_or(0),
-        virtual_memory: status_map
-            .get("VmSize")
-            .and_then(|v| v[0].parse().ok())
-            .unwrap_or(0),
-        user_time: status_map
-            .get("Utime")
-            .and_then(|v| v[0].parse().ok())
-            .unwrap_or(0),
-        system_time: status_map
-            .get("Stime")
-            .and_then(|v| v[0].parse().ok())
-            .unwrap_or(0),
-    };
-
-    Ok(process_info)
-=======
   Ok(process_info)
->>>>>>> 8c380b925df2d696db29ca5bc2fbc260bf54769c
 }
 
 // List processes from /proc
@@ -256,63 +217,10 @@ fn show_stats(
     // Use buffering to accumulate and write output in one go
     let mut output = String::new();
 
-<<<<<<< HEAD
-    loop {
-        // Listen for keyboard events to bind processes
-        if event::poll(Duration::from_millis(1000)).unwrap() {
-            if let Event::Key(event) = event::read().unwrap() {
-                match event.code {
-                    KeyCode::Char('p') => {
-                        // Get PID and CPU IDs from the user
-                        println!("'p' key pressed");
-                        let mut input = String::new();
-                        println!("Enter the PID of the process to bind:");
-                        io::stdin().read_line(&mut input).unwrap();
-                        let pid: pid_t = match input.trim().parse() {
-                            Ok(pid) => pid,
-                            Err(_) => {
-                                eprintln!("Invalid PID. Returning to main menu.");
-                                continue; // Skip this iteration
-                            }
-                        };
-
-                        input.clear();
-                        println!("Enter the CPU IDs to bind the process to (comma-separated):");
-                        io::stdin().read_line(&mut input).unwrap();
-                        let cpu_ids: Vec<usize> = input
-                            .trim()
-                            .split(',')
-                            .filter_map(|s| s.trim().parse().ok())
-                            .map(|id: usize| id - 1) // Subtract 1 from each CPU ID as the CPU are zero based
-                            .collect();
-
-                        if cpu_ids.is_empty() {
-                            eprintln!("No valid CPU IDs provided. Returning to main menu.");
-                            continue;
-                        }
-
-                        match bind_to_cpu_set(pid, &cpu_ids) {
-                            Ok(_) => {
-                                println!("Successfully bound process {} to CPUs {:?}", pid, cpu_ids)
-                            }
-                            Err(e) => eprintln!("Failed to bind process: {}", e),
-                        }
-                    }
-                    _ => {
-                        // Handle all other keys
-                        println!("Unhandled key pressed: {:?}", event.code);
-                    }
-                }
-            }
-        }
-        // Use buffering to accumulate and write output in one go
-        let mut output = String::new();
-=======
     unsafe {
       let mut system_info: sysinfo = std::mem::zeroed();
       sysinfo(&mut system_info as *mut sysinfo);
       let mem_unit = 1_000_000 / system_info.mem_unit as u64;
->>>>>>> 8c380b925df2d696db29ca5bc2fbc260bf54769c
 
       output.push_str(&format!(
                 "totalram: {}\nsharedram: {}\nfreeram: {}\nbufferram: {}\ntotalswap: {}\nfreeswap: {}\nuptime: {}\nloads: {:?}\n",
@@ -325,67 +233,6 @@ fn show_stats(
                 system_info.uptime,
                 system_info.loads
             ));
-<<<<<<< HEAD
-        }
-
-        match get_cpu_usage() {
-            Ok(cpu_usage) => {
-                output.push_str("CPU Usage:\n");
-                for (i, usage) in cpu_usage.iter().enumerate() {
-                    if i == 0 {
-                        output.push_str(&format!("Total CPU: {:.2}%\n", usage));
-                    } else {
-                        output.push_str(&format!("Core {}: {:.2}%\n", i, usage));
-                    }
-                }
-            }
-            Err(e) => output.push_str(&format!("Error retrieving CPU usage: {}\n", e)),
-        }
-
-        output.push_str(&format!(
-            "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}\n",
-            "PID",
-            "PPID",
-            "STATE",
-            "MEM(KB)",
-            "THREADS",
-            "VIRT_MEM(KB)",
-            "USER_TIME",
-            "SYS_TIME",
-            "EXE PATH"
-        ));
-        output.push_str(&format!("{}\n", "-".repeat(100)));
-
-        match list_processes() {
-            Ok(mut processes) => {
-                processes.sort_by_key(|p| p.pid);
-                for process in processes {
-                    output.push_str(&format!(
-                        "{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{}\n",
-                        process.pid,
-                        process.ppid,
-                        process.state,
-                        process.memory,
-                        process.thread_count,
-                        process.virtual_memory,
-                        process.user_time,
-                        process.system_time,
-                        process.exe_path
-                    ));
-                }
-            }
-            Err(e) => {
-                output.push_str(&format!("Error listing processes: {}\n", e));
-            }
-        }
-
-        // Clear screen and display all at once
-        print!("{esc}[2J{esc}[1;1H{}", output, esc = 27 as char);
-        std::io::stdout().flush().unwrap();
-
-        std::thread::sleep(Duration::from_secs(refresh_rate));
-    }
-=======
     }
 
     match get_cpu_usage() {
@@ -492,6 +339,24 @@ fn get_priority(pid: pid_t) -> i32 {
   unsafe { libc::getpriority(libc::PRIO_PROCESS, pid.try_into().unwrap()) }
 }
 
+fn parse_cpu_affinity(input: &str) -> (pid_t, Vec<usize>) {
+  let parts: Vec<&str> = input.split_whitespace().collect();
+  if parts.len() < 2 {
+      panic!("Invalid CPU affinity format. Must be <PID> <CPU_LIST>");
+  }
+
+  let process_id: pid_t = parts[0]
+      .parse()
+      .expect("Invalid PID value in CPU affinity list");
+
+  let cpus: Vec<usize> = parts[1..]
+      .iter()
+      .map(|&cpu| cpu.parse().expect("Invalid CPU index"))
+      .collect();
+
+  (process_id, cpus)
+}
+
 fn main() {
   let args: Vec<String> = std::env::args().collect();
   let mut opts = Options::new();
@@ -509,6 +374,7 @@ fn main() {
     "How to sort the processes",
     "[name|pid|memory|priority]",
   );
+  opts.optopt("c", "cpu_affinity", "pid of process", "[NUM]");
 
   let matches = match opts.parse(&args[1..]) {
     Ok(m) => m,
@@ -522,6 +388,11 @@ fn main() {
     return;
   }
 
+  if let Some(cpu_list) = matches.opt_str("c") {
+    let (process_id, cpus) = parse_cpu_affinity(&cpu_list);  // <-- Correct function call here
+    println!("Assigning Process ID {} to CPUs: {:?}", process_id, cpus);
+    bind_to_cpu_set(process_id, &cpus);
+}
   let pid = matches
     .opt_get_default::<pid_t>("pid", 0)
     .expect("Invalid pid value");
@@ -561,5 +432,4 @@ fn main() {
     .opt_get_default::<String>("o", "/tmp/procstat.log".to_string())
     .expect("Invalid output file value");
   show_stats(refresh_rate, nprocs, iterations, sort_by, output_file);
->>>>>>> 8c380b925df2d696db29ca5bc2fbc260bf54769c
 }
