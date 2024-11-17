@@ -374,7 +374,7 @@ fn main() {
     "How to sort the processes",
     "[name|pid|memory|priority]",
   );
-  opts.optopt("c", "cpu_affinity", "pid of process", "[NUM]");
+  opts.optopt("c", "cpu_affinity", "pid of process", "[PID,NUM]");
 
   let matches = match opts.parse(&args[1..]) {
     Ok(m) => m,
@@ -387,12 +387,7 @@ fn main() {
     print_usage(&args[0], opts);
     return;
   }
-
-  if let Some(cpu_list) = matches.opt_str("c") {
-    let (process_id, cpus) = parse_cpu_affinity(&cpu_list);  // <-- Correct function call here
-    println!("Assigning Process ID {} to CPUs: {:?}", process_id, cpus);
-    bind_to_cpu_set(process_id, &cpus);
-}
+  
   let pid = matches
     .opt_get_default::<pid_t>("pid", 0)
     .expect("Invalid pid value");
@@ -403,12 +398,18 @@ fn main() {
         .expect("Invalid signal value");
       kill_process(pid, kill_signal);
     }
-    if matches.opt_present("p") {
+    else if matches.opt_present("p") {
       let priority = matches
         .opt_get_default::<i32>("p", 0)
         .expect("Invalid priority value");
       set_priority(pid, priority)
     }
+    else if matches.opt_present("c") {
+      let cpu_list: Vec<usize> = args[2..].iter() 
+      .map(|arg| arg.parse::<usize>().expect("Invalid CPU value")) 
+      .collect();
+      bind_to_cpu_set(pid, &cpu_list);
+  }
     return;
   }
 
