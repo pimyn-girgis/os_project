@@ -1,6 +1,11 @@
 use core::panic;
+use crossterm::{
+    event::{self, Event, KeyCode},
+    execute,
+    terminal::{self, Clear, ClearType},
+};
 use getopts::Options;
-use libc::{self, pid_t, sysinfo};
+use libc::{self, cpu_set_t, pid_t, sched_setaffinity, sysinfo, CPU_SET, CPU_ZERO};
 use std::collections::HashMap;
 use std::fs;
 use std::io;
@@ -39,6 +44,38 @@ fn parse_status_line(line: &str) -> io::Result<(String, Vec<String>)> {
   }
 }
 
+// Function to bind a process to a set of CPUs
+fn bind_to_cpu_set(pid: pid_t, cpu_ids: &Vec<usize>) -> io::Result<()> {
+    // Initialize an empty CPU set
+    let mut cpuset: cpu_set_t = unsafe { std::mem::zeroed() };
+
+    unsafe {
+        // Clear all CPUs from the set
+        CPU_ZERO(&mut cpuset);
+        // Add each CPU ID to the set
+        for &cpu_id in cpu_ids {
+            CPU_SET(cpu_id, &mut cpuset);
+        }
+    }
+
+    // Set the CPU affinity for the given process
+    let result =
+        unsafe { sched_setaffinity(pid, std::mem::size_of::<cpu_set_t>(), &cpuset as *const _) };
+
+    if result == 0 {
+        println!("Process {} bound to CPUs {:?}", pid, cpu_ids);
+        Ok(())
+    } else {
+        eprintln!(
+            "Failed to set CPU affinity for process {}. Error: {:?}",
+            pid,
+            io::Error::last_os_error()
+        );
+        Err(io::Error::last_os_error())
+    }
+}
+
+// Read process info from /proc/<pid>/status and /proc/<pid>/stat
 fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
   fn parse_status_file(status_path: &str) -> io::Result<HashMap<String, Vec<String>>> {
     let status_content = fs::read_to_string(status_path)?;
@@ -93,6 +130,7 @@ fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
   Ok(process_info)
 }
 
+// List processes from /proc
 fn list_processes() -> io::Result<Vec<ProcessInfo>> {
   let mut processes = Vec::new();
 
@@ -301,6 +339,24 @@ fn get_priority(pid: pid_t) -> i32 {
   unsafe { libc::getpriority(libc::PRIO_PROCESS, pid.try_into().unwrap()) }
 }
 
+fn parse_cpu_affinity(input: &str) -> (pid_t, Vec<usize>) {
+  let parts: Vec<&str> = input.split_whitespace().collect();
+  if parts.len() < 2 {
+      panic!("Invalid CPU affinity format. Must be <PID> <CPU_LIST>");
+  }
+
+  let process_id: pid_t = parts[0]
+      .parse()
+      .expect("Invalid PID value in CPU affinity list");
+
+  let cpus: Vec<usize> = parts[1..]
+      .iter()
+      .map(|&cpu| cpu.parse().expect("Invalid CPU index"))
+      .collect();
+
+  (process_id, cpus)
+}
+
 fn main() {
   let args: Vec<String> = std::env::args().collect();
   let mut opts = Options::new();
@@ -318,6 +374,7 @@ fn main() {
     "How to sort the processes",
     "[name|pid|memory|priority]",
   );
+  opts.optopt("c", "cpu_affinity", "pid of process", "[NUM]");
 
   let matches = match opts.parse(&args[1..]) {
     Ok(m) => m,
@@ -331,6 +388,11 @@ fn main() {
     return;
   }
 
+  if let Some(cpu_list) = matches.opt_str("c") {
+    let (process_id, cpus) = parse_cpu_affinity(&cpu_list);  // <-- Correct function call here
+    println!("Assigning Process ID {} to CPUs: {:?}", process_id, cpus);
+    bind_to_cpu_set(process_id, &cpus);
+}
   let pid = matches
     .opt_get_default::<pid_t>("pid", 0)
     .expect("Invalid pid value");
