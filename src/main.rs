@@ -25,6 +25,7 @@ pub fn make_opts() -> Options {
   );
   opts.optopt("f", "filter_by", "Filter by", "[name|user|ppid|state]");
   opts.optopt("", "pattern", "Pattern to filter by", "[PATTERN]");
+  opts.optflag("e", "exact_match", "The pattern should be an exact match");
   opts.optflag("d", "descending", "Sort in descending order");
   opts.optopt("c", "cpu_affinity", "List of cpus", "[CPU]");
   opts.optflag("a", "all", "Execute on all output processes");
@@ -91,6 +92,7 @@ fn main() {
     .write(true)
     .open(output_file)
     .expect("Failed to open log file");
+  let exact_match = matches.opt_present("e");
 
   if pid_p || all_p {
     let mut pids: Vec<pid_t> = Vec::new();
@@ -104,6 +106,7 @@ fn main() {
         !descending,
         &filter_by,
         &pattern,
+        exact_match,
       )
       .unwrap()
       .iter()
@@ -127,13 +130,13 @@ fn main() {
         .iter()
         .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
         .collect();
-      let _ = pro::bind_to_cpu_set(pid, &cpu_list);
+      pro::execute_on_with_args::<usize>(pids, &cpu_list, pro::bind_to_cpu_set);
     }
     return;
   }
 
   while iterations == 0 || current_iteration != iterations {
-    let output = pro::show_stats(nprocs, &sort_by, descending, &filter_by, &pattern);
+    let output = pro::show_stats(nprocs, &sort_by, descending, &filter_by, &pattern, exact_match);
     current_iteration += 1;
     // Clear screen and display all at once
     print!("{esc}[2J{esc}[1;1H{}", output, esc = 27 as char);

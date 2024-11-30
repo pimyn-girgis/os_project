@@ -133,15 +133,22 @@ pub fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
   Ok(process_info)
 }
 
-pub fn filter_processes(processes: Vec<ProcessInfo>, filter_by: &str, pattern: &str) -> Vec<ProcessInfo> {
-  processes
+pub fn filter_processes(processes: Vec<ProcessInfo>, filter_by: &str, pattern: &str, exact_match: bool) -> Vec<ProcessInfo> {
+    processes
     .into_iter()
-    .filter(|p| match filter_by {
-      "name" => p.name.contains(pattern),
-      "user" => p.user.contains(pattern),
-      "ppid" => p.ppid.to_string().contains(pattern),
-      "state" => p.state.to_string().contains(pattern),
-      _ => panic!("Invalid filter_by value"),
+    .filter(|p| {
+      let field = match filter_by {
+        "name" => p.name.clone(),
+        "user" => p.user.clone(),
+        "ppid" => p.ppid.to_string(),
+        "state" => p.state.to_string(),
+        _ => panic!("Invalid filter_by value"),
+      };
+      if exact_match {
+        field == pattern
+      } else {
+        field.contains(pattern)
+      }
     })
     .collect()
 }
@@ -173,6 +180,7 @@ pub fn list_processes(
   ascending: bool,
   filter_by: &str,
   pattern: &str,
+  exact_match: bool,
 ) -> io::Result<Vec<ProcessInfo>> {
   match sort_by {
     "name" => processes.sort_by_key(|p| p.name.clone()),
@@ -189,7 +197,7 @@ pub fn list_processes(
   }
 
   if !filter_by.is_empty() {
-    processes = filter_processes(processes, filter_by, pattern);
+    processes = filter_processes(processes, filter_by, pattern, exact_match);
   }
 
   if nprocs > processes.len() {
@@ -258,7 +266,7 @@ fn get_cpu_usage() -> io::Result<Vec<f64>> {
   Ok(cpu_usage)
 }
 
-pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool, filter_by: &str, pattern: &str) -> String {
+pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool, filter_by: &str, pattern: &str, exact_match: bool) -> String {
   // Use buffering to accumulate and write output in one go
   let mut output = String::new();
 
@@ -303,7 +311,7 @@ pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool, filter_by: &st
   ));
   output.push_str(&format!("{}\n", "-".repeat(150)));
 
-  match list_processes(read_processes().unwrap(), 0, nprocs, sort_by, !descending, filter_by, pattern) {
+  match list_processes(read_processes().unwrap(), 0, nprocs, sort_by, !descending, filter_by, pattern, exact_match) {
     Ok(processes) => {
       for process in processes {
         output.push_str(&format!(
@@ -361,17 +369,15 @@ pub fn get_sysinfo() -> sysinfo {
   system_info
 }
 
-pub fn execute_on_with_arg(pids: Vec<pid_t>, arg: i32, fn_ptr: fn(pid_t, i32)) {
+pub fn execute_on_with_arg<T: std::marker::Copy>(pids: Vec<pid_t>, arg: T, fn_ptr: fn(pid_t, T)) {
   for pid in pids {
     fn_ptr(pid, arg);
   }
 }
 
-pub fn execute_on_with_args(pids: Vec<pid_t>, args: Vec<i32>, fn_ptr: fn(pid_t, i32)) {
+pub fn execute_on_with_args<T: std::marker::Copy>(pids: Vec<pid_t>, args: &Vec<T>, fn_ptr: fn(pid_t, &Vec<T>) -> io::Result<()>) {
   for pid in pids {
-    for arg in &args {
-      fn_ptr(pid, *arg);
-    }
+    let _ = fn_ptr(pid, args);
   }
 }
 
