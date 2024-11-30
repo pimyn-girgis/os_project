@@ -26,48 +26,41 @@ fn parse_status_line(line: &str) -> io::Result<(String, Vec<String>)> {
   match line_parts.len() {
     2 => {
       let key = line_parts[0].trim().to_string();
-      let values: Vec<String> = line_parts[1]
-        .split_whitespace()
-        .map(|s| s.to_string())
-        .collect();
+      let values: Vec<String> = line_parts[1].split_whitespace().map(|s| s.to_string()).collect();
       Ok((key, values))
     }
-    _ => Err(io::Error::new(
-      io::ErrorKind::InvalidData,
-      "Invalid status line",
-    )),
+    _ => Err(io::Error::new(io::ErrorKind::InvalidData, "Invalid status line")),
   }
 }
 
 // Function to bind a process to a set of CPUs
 fn bind_to_cpu_set(pid: pid_t, cpu_ids: &Vec<usize>) -> io::Result<()> {
-    // Initialize an empty CPU set
-    let mut cpuset: cpu_set_t = unsafe { std::mem::zeroed() };
+  // Initialize an empty CPU set
+  let mut cpuset: cpu_set_t = unsafe { std::mem::zeroed() };
 
-    unsafe {
-        // Clear all CPUs from the set
-        CPU_ZERO(&mut cpuset);
-        // Add each CPU ID to the set
-        for &cpu_id in cpu_ids {
-            CPU_SET(cpu_id, &mut cpuset);
-        }
+  unsafe {
+    // Clear all CPUs from the set
+    CPU_ZERO(&mut cpuset);
+    // Add each CPU ID to the set
+    for &cpu_id in cpu_ids {
+      CPU_SET(cpu_id, &mut cpuset);
     }
+  }
 
-    // Set the CPU affinity for the given process
-    let result =
-        unsafe { sched_setaffinity(pid, std::mem::size_of::<cpu_set_t>(), &cpuset as *const _) };
+  // Set the CPU affinity for the given process
+  let result = unsafe { sched_setaffinity(pid, std::mem::size_of::<cpu_set_t>(), &cpuset as *const _) };
 
-    if result == 0 {
-        println!("Process {} bound to CPUs {:?}", pid, cpu_ids);
-        Ok(())
-    } else {
-        eprintln!(
-            "Failed to set CPU affinity for process {}. Error: {:?}",
-            pid,
-            io::Error::last_os_error()
-        );
-        Err(io::Error::last_os_error())
-    }
+  if result == 0 {
+    println!("Process {} bound to CPUs {:?}", pid, cpu_ids);
+    Ok(())
+  } else {
+    eprintln!(
+      "Failed to set CPU affinity for process {}. Error: {:?}",
+      pid,
+      io::Error::last_os_error()
+    );
+    Err(io::Error::last_os_error())
+  }
 }
 
 // Read process info from /proc/<pid>/status and /proc/<pid>/stat
@@ -103,22 +96,10 @@ fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
       }
     },
     name: status_map["Name"][0].clone(),
-    thread_count: status_map
-      .get("Threads")
-      .and_then(|v| v[0].parse().ok())
-      .unwrap_or(0),
-    virtual_memory: status_map
-      .get("VmSize")
-      .and_then(|v| v[0].parse().ok())
-      .unwrap_or(0),
-    user_time: status_map
-      .get("Utime")
-      .and_then(|v| v[0].parse().ok())
-      .unwrap_or(0),
-    system_time: status_map
-      .get("Stime")
-      .and_then(|v| v[0].parse().ok())
-      .unwrap_or(0),
+    thread_count: status_map.get("Threads").and_then(|v| v[0].parse().ok()).unwrap_or(0),
+    virtual_memory: status_map.get("VmSize").and_then(|v| v[0].parse().ok()).unwrap_or(0),
+    user_time: status_map.get("Utime").and_then(|v| v[0].parse().ok()).unwrap_or(0),
+    system_time: status_map.get("Stime").and_then(|v| v[0].parse().ok()).unwrap_or(0),
     priority: get_priority(pid),
   };
 
@@ -153,11 +134,7 @@ fn get_cpu_usage() -> io::Result<Vec<f64>> {
     for line in content.lines() {
       if line.starts_with("cpu") {
         let values: Vec<&str> = line.split_whitespace().collect();
-        let total: u64 = values[1..]
-          .iter()
-          .take(7)
-          .map(|&s| s.parse::<u64>().unwrap_or(0))
-          .sum();
+        let total: u64 = values[1..].iter().take(7).map(|&s| s.parse::<u64>().unwrap_or(0)).sum();
         let idle: u64 = values[4].parse().unwrap_or(0);
         stats.push((total, idle));
       }
@@ -193,13 +170,7 @@ fn get_cpu_usage() -> io::Result<Vec<f64>> {
   Ok(cpu_usage)
 }
 
-fn show_stats(
-  refresh_rate: u64,
-  nprocs: usize,
-  iterations: u32,
-  sort_by: String,
-  log_file: String,
-) {
+fn show_stats(refresh_rate: u64, nprocs: usize, iterations: u32, sort_by: String, log_file: String) {
   let mut log_file = fs::OpenOptions::new()
     .create(true)
     .truncate(true)
@@ -244,21 +215,15 @@ fn show_stats(
       Err(e) => output.push_str(&format!("Error retrieving CPU usage: {}\n", e)),
     }
 
-    macro_rules! FORMAT_STR { () => { "{:<6}\t{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{:<8}\t{:<20}\n" }; }
+    macro_rules! FORMAT_STR {
+      () => {
+        "{:<6}\t{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{:<8}\t{:<20}\n"
+      };
+    }
 
     output.push_str(&format!(
       FORMAT_STR!(),
-      "UID",
-      "PID",
-      "PPID",
-      "STATE",
-      "MEM(KB)",
-      "THREADS",
-      "VIRT_MEM(KB)",
-      "USER_TIME",
-      "SYS_TIME",
-      "Priority",
-      "Name",
+      "UID", "PID", "PPID", "STATE", "MEM(KB)", "THREADS", "VIRT_MEM(KB)", "USER_TIME", "SYS_TIME", "Priority", "Name",
     ));
     output.push_str(&format!("{}\n", "-".repeat(150)));
 
@@ -302,8 +267,7 @@ fn show_stats(
 
     std::thread::sleep(Duration::from_secs(refresh_rate));
     current_iteration += 1;
-    writeln!(log_file, "Iteration: {}\n{}", current_iteration, output)
-      .expect("Failed to write to log file");
+    writeln!(log_file, "Iteration: {}\n{}", current_iteration, output).expect("Failed to write to log file");
   }
 }
 
@@ -322,10 +286,7 @@ fn print_usage(program: &str, opts: Options) {
 fn set_priority(pid: pid_t, priority: i32) {
   unsafe {
     if libc::setpriority(libc::PRIO_PROCESS, pid.try_into().unwrap(), priority) == -1 {
-      eprintln!(
-        "Failed to set priority: {}",
-        std::io::Error::last_os_error()
-      );
+      eprintln!("Failed to set priority: {}", std::io::Error::last_os_error());
     }
   }
 }
@@ -351,7 +312,7 @@ fn main() {
     "How to sort the processes",
     "[name|pid|memory|priority]",
   );
-  opts.optopt("c", "cpu_affinity", "pid of process", "[PID,NUM]");
+  opts.optopt("c", "cpu_affinity", "List of cpus", "[CPU]");
 
   let matches = match opts.parse(&args[1..]) {
     Ok(m) => m,
@@ -365,28 +326,24 @@ fn main() {
     return;
   }
 
-  let pid = matches
-    .opt_get_default::<pid_t>("pid", 0)
-    .expect("Invalid pid value");
+  let pid = matches.opt_get_default::<pid_t>("pid", 0).expect("Invalid pid value");
   if matches.opt_present("pid") {
     if matches.opt_present("k") {
       let kill_signal = matches
         .opt_get_default::<i32>("k", libc::SIGKILL)
         .expect("Invalid signal value");
       kill_process(pid, kill_signal);
-    }
-    else if matches.opt_present("p") {
-      let priority = matches
-        .opt_get_default::<i32>("p", 0)
-        .expect("Invalid priority value");
+    } else if matches.opt_present("p") {
+      let priority = matches.opt_get_default::<i32>("p", 0).expect("Invalid priority value");
       set_priority(pid, priority)
-    }
-    else if matches.opt_present("c") {
-      let cpu_list: Vec<usize> = args[2..].iter()
-      .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
-      .collect();
+    } else if matches.opt_present("c") {
+      let cpu_list: Vec<usize> = matches
+        .opt_get_default::<String>("c", "".to_string())
+        .iter()
+        .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
+        .collect();
       let _ = bind_to_cpu_set(pid, &cpu_list);
-  }
+    }
     return;
   }
 
@@ -409,5 +366,6 @@ fn main() {
   let output_file = matches
     .opt_get_default::<String>("o", "/tmp/procstat.log".to_string())
     .expect("Invalid output file value");
+
   show_stats(refresh_rate, nprocs, iterations, sort_by, output_file);
 }
