@@ -239,4 +239,103 @@ fn main() {
 
         std::thread::sleep(Duration::from_secs(refresh_rate));
     }
+<<<<<<< Updated upstream
 }
+=======
+    if matches.opt_present("k") {
+      let kill_signal = matches
+        .opt_get_default::<i32>("k", libc::SIGKILL)
+        .expect("Invalid signal value");
+      // pro::kill_process(pid, kill_signal);
+      pro::execute_on_with_arg(pids, kill_signal, pro::kill_process);
+    } else if matches.opt_present("p") {
+      let priority = matches.opt_get_default::<i32>("p", 0).expect("Invalid priority value");
+      pro::execute_on_with_arg(pids, priority, pro::set_priority);
+    } else if matches.opt_present("c") {
+      let cpu_list: Vec<usize> = matches
+        .opt_get_default::<String>("c", "".to_string())
+        .iter()
+        .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
+        .collect();
+      pro::execute_on_with_args::<usize>(pids, &cpu_list, pro::bind_to_cpu_set);
+    }
+    return;
+  }
+
+  if matches.opt_present("t") {
+    pro::build_tree(
+      &pro::list_processes(
+        pro::read_processes().unwrap(),
+        0,
+        nprocs,
+        &sort_by,
+        !descending,
+        &filter_by,
+        &pattern,
+        exact_match,
+      ).unwrap(),
+      0,
+    ).print(0);
+
+    return;
+  }
+
+  while iterations == 0 || current_iteration != iterations {
+    let stats = pro::show_stats(nprocs, &sort_by, descending, &filter_by, &pattern, exact_match);
+    current_iteration += 1;
+
+    if current_iteration == 1 {
+        continue;
+    }
+
+    // Combine the components into a single output string
+    let mut output = String::new();
+
+    // Add memory info
+    output.push_str(&stats.memory_info);
+    output.push('\n');
+
+    // Add CPU usage
+    for line in &stats.cpu_usage {
+        output.push_str(line);
+        output.push('\n');
+    }
+
+    // Prepare process listing header
+    output.push_str(&format!(
+        "{:<6}\t{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{:<5}\t{:<20}",
+        "UID", "PID", "PPID", "STATE", "MEM(MB)", "THREADS", "VIRT_MEM(MB)", "USER_TIME", "SYS_TIME", "Priority", "Name"
+    ));
+    output.push('\n');
+    output.push_str(&"-".repeat(150));  // Use push_str here to append the dashed line
+    output.push('\n');
+    // Add processes (format each ProcessInfo as a string)
+    for process in &stats.processes {
+        output.push_str(&format!(
+            "{:<6}\t{:<6}\t{:<6}\t{:<6}\t{:<8}\t{:<8}\t{:<12}\t{:<10}\t{:<10}\t{:<5}\t{:<20}",
+            process.user,
+            process.pid,
+            process.ppid,
+            process.state,
+            process.memory / 1000,
+            process.thread_count,
+            process.virtual_memory / 1000,
+            process.user_time,
+            process.system_time,
+            process.priority,
+            process.name
+        ));
+        output.push('\n');
+    }
+
+    // Clear screen and display all at once
+    print!("{esc}[2J{esc}[1;1H{}", output, esc = 27 as char);
+    std::io::stdout().flush().unwrap();
+
+    std::thread::sleep(Duration::from_secs(refresh_rate));
+    writeln!(log_file, "{}", output).expect("Failed to write to log file");
+}
+
+
+}
+>>>>>>> Stashed changes
