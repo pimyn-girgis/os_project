@@ -133,8 +133,13 @@ pub fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
   Ok(process_info)
 }
 
-pub fn filter_processes(processes: Vec<ProcessInfo>, filter_by: &str, pattern: &str, exact_match: bool) -> Vec<ProcessInfo> {
-    processes
+pub fn filter_processes(
+  processes: Vec<ProcessInfo>,
+  filter_by: &str,
+  pattern: &str,
+  exact_match: bool,
+) -> Vec<ProcessInfo> {
+  processes
     .into_iter()
     .filter(|p| {
       let field = match filter_by {
@@ -224,7 +229,35 @@ pub fn list_processes(
   }
 }
 
-fn get_cpu_usage() -> io::Result<Vec<f64>> {
+pub struct Tree {
+  children: Vec<Tree>,
+  pid: pid_t,
+}
+
+impl Tree {
+  pub fn print(&self, indent: usize) {
+    if indent == 0 {
+      println!("{}", self.pid);
+    } else {
+      let prefix = "│   ".repeat(indent / 4 - 1);
+      println!("{}├── {}", prefix, self.pid);
+    }
+    for child in &self.children {
+      child.print(indent + 4);
+    }
+  }
+}
+
+pub fn build_tree(processes: &Vec<ProcessInfo>, pid: pid_t) -> Tree {
+  let children: Vec<Tree> = processes
+    .iter()
+    .filter(|p| p.ppid == pid)
+    .map(|p| build_tree(processes, p.pid))
+    .collect();
+  Tree { children, pid }
+}
+
+pub fn get_cpu_usage() -> io::Result<Vec<f64>> {
   pub fn parse_cpu_stats(content: &str) -> Vec<(u64, u64)> {
     let mut stats = Vec::new();
     for line in content.lines() {
@@ -266,7 +299,14 @@ fn get_cpu_usage() -> io::Result<Vec<f64>> {
   Ok(cpu_usage)
 }
 
-pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool, filter_by: &str, pattern: &str, exact_match: bool) -> String {
+pub fn show_stats(
+  nprocs: usize,
+  sort_by: &str,
+  descending: bool,
+  filter_by: &str,
+  pattern: &str,
+  exact_match: bool,
+) -> String {
   // Use buffering to accumulate and write output in one go
   let mut output = String::new();
 
@@ -311,7 +351,16 @@ pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool, filter_by: &st
   ));
   output.push_str(&format!("{}\n", "-".repeat(150)));
 
-  match list_processes(read_processes().unwrap(), 0, nprocs, sort_by, !descending, filter_by, pattern, exact_match) {
+  match list_processes(
+    read_processes().unwrap(),
+    0,
+    nprocs,
+    sort_by,
+    !descending,
+    filter_by,
+    pattern,
+    exact_match,
+  ) {
     Ok(processes) => {
       for process in processes {
         output.push_str(&format!(
@@ -375,7 +424,11 @@ pub fn execute_on_with_arg<T: std::marker::Copy>(pids: Vec<pid_t>, arg: T, fn_pt
   }
 }
 
-pub fn execute_on_with_args<T: std::marker::Copy>(pids: Vec<pid_t>, args: &Vec<T>, fn_ptr: fn(pid_t, &Vec<T>) -> io::Result<()>) {
+pub fn execute_on_with_args<T: std::marker::Copy>(
+  pids: Vec<pid_t>,
+  args: &Vec<T>,
+  fn_ptr: fn(pid_t, &Vec<T>) -> io::Result<()>,
+) {
   for pid in pids {
     let _ = fn_ptr(pid, args);
   }

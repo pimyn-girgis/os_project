@@ -29,6 +29,7 @@ pub fn make_opts() -> Options {
   opts.optflag("d", "descending", "Sort in descending order");
   opts.optopt("c", "cpu_affinity", "List of cpus", "[CPU]");
   opts.optflag("a", "all", "Execute on all output processes");
+  opts.optflag("t", "tree", "print process tree");
   opts
 }
 
@@ -132,6 +133,24 @@ fn main() {
         .collect();
       pro::execute_on_with_args::<usize>(pids, &cpu_list, pro::bind_to_cpu_set);
     }
+    return;
+  }
+
+  if matches.opt_present("t") {
+    pro::build_tree(
+      &pro::list_processes(
+        pro::read_processes().unwrap(),
+        0,
+        nprocs,
+        &sort_by,
+        !descending,
+        &filter_by,
+        &pattern,
+        exact_match,
+      ).unwrap(),
+      0,
+    ).print(0);
+
     return;
   }
 
