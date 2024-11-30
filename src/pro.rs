@@ -1,14 +1,16 @@
 use core::panic;
 use getopts::Options;
 use libc::{self, cpu_set_t, pid_t, sched_setaffinity, sysinfo, CPU_SET, CPU_ZERO};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
+use std::fs::File;
 use std::io;
+use std::io::{BufRead, BufReader};
 
 #[derive(Clone)]
 pub struct ProcessInfo {
   user: String,
-  pid: pid_t,
+  pub pid: pid_t,
   ppid: pid_t,
   name: String,
   state: char,
@@ -19,10 +21,13 @@ pub struct ProcessInfo {
   system_time: u64,
   priority: i32,
 }
-use std::fs::File;
-use std::io::{BufRead, BufReader};
 
 fn get_username_from_uid(target_uid: u32) -> Option<String> {
+  // cache the usernames to avoid opening the file multiple times
+  static mut CACHE: BTreeMap<u32, String> = BTreeMap::new();
+  if let Some(username) = unsafe { CACHE.get(&target_uid) } {
+    return Some(username.clone());
+  }
   let file = File::open("/etc/passwd").ok()?;
   let reader = BufReader::new(file);
 
@@ -31,6 +36,9 @@ fn get_username_from_uid(target_uid: u32) -> Option<String> {
     if fields.len() >= 3 {
       if let Ok(uid) = fields[2].parse::<u32>() {
         if uid == target_uid {
+          unsafe {
+            CACHE.insert(uid, fields[0].to_string());
+          }
           return Some(fields[0].to_string());
         }
       }
@@ -125,15 +133,21 @@ pub fn read_process_info(pid: pid_t) -> io::Result<ProcessInfo> {
   Ok(process_info)
 }
 
-// List processes from /proc
-pub fn list_processes(
-  mut from: usize,
-  mut nprocs: usize,
-  sort_by: &str,
-  ascending: bool,
-) -> io::Result<Vec<ProcessInfo>> {
-  let mut processes = Vec::new();
+pub fn filter_processes(processes: Vec<ProcessInfo>, filter_by: &str, pattern: &str) -> Vec<ProcessInfo> {
+  processes
+    .into_iter()
+    .filter(|p| match filter_by {
+      "name" => p.name.contains(pattern),
+      "user" => p.user.contains(pattern),
+      "ppid" => p.ppid.to_string().contains(pattern),
+      "state" => p.state.to_string().contains(pattern),
+      _ => panic!("Invalid filter_by value"),
+    })
+    .collect()
+}
 
+pub fn read_processes() -> io::Result<Vec<ProcessInfo>> {
+  let mut processes = Vec::new();
   for entry in fs::read_dir("/proc")? {
     let path = entry?.path();
     if let Some(name) = path.file_name() {
@@ -147,7 +161,19 @@ pub fn list_processes(
       }
     }
   }
+  Ok(processes)
+}
 
+// List processes from /proc
+pub fn list_processes(
+  mut processes: Vec<ProcessInfo>,
+  mut from: usize,
+  mut nprocs: usize,
+  sort_by: &str,
+  ascending: bool,
+  filter_by: &str,
+  pattern: &str,
+) -> io::Result<Vec<ProcessInfo>> {
   match sort_by {
     "name" => processes.sort_by_key(|p| p.name.clone()),
     "pid" => processes.sort_by_key(|p| p.pid),
@@ -160,6 +186,10 @@ pub fn list_processes(
     "utime" => processes.sort_by_key(|p| p.user_time),
     "stime" => processes.sort_by_key(|p| p.system_time),
     _ => panic!("Invalid sort_by value"),
+  }
+
+  if !filter_by.is_empty() {
+    processes = filter_processes(processes, filter_by, pattern);
   }
 
   if nprocs > processes.len() {
@@ -228,7 +258,7 @@ fn get_cpu_usage() -> io::Result<Vec<f64>> {
   Ok(cpu_usage)
 }
 
-pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool) -> String {
+pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool, filter_by: &str, pattern: &str) -> String {
   // Use buffering to accumulate and write output in one go
   let mut output = String::new();
 
@@ -273,7 +303,7 @@ pub fn show_stats(nprocs: usize, sort_by: &str, descending: bool) -> String {
   ));
   output.push_str(&format!("{}\n", "-".repeat(150)));
 
-  match list_processes(0, nprocs, sort_by, !descending) {
+  match list_processes(read_processes().unwrap(), 0, nprocs, sort_by, !descending, filter_by, pattern) {
     Ok(processes) => {
       for process in processes {
         output.push_str(&format!(
@@ -329,4 +359,24 @@ pub fn get_sysinfo() -> sysinfo {
     sysinfo(&mut system_info as *mut sysinfo);
   }
   system_info
+}
+
+pub fn execute_on_with_arg(pids: Vec<pid_t>, arg: i32, fn_ptr: fn(pid_t, i32)) {
+  for pid in pids {
+    fn_ptr(pid, arg);
+  }
+}
+
+pub fn execute_on_with_args(pids: Vec<pid_t>, args: Vec<i32>, fn_ptr: fn(pid_t, i32)) {
+  for pid in pids {
+    for arg in &args {
+      fn_ptr(pid, *arg);
+    }
+  }
+}
+
+pub fn execute_on(pids: Vec<pid_t>, fn_ptr: fn(pid_t)) {
+  for pid in pids {
+    fn_ptr(pid);
+  }
 }

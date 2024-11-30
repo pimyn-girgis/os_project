@@ -1,9 +1,9 @@
 use core::panic;
-use std::process::exit;
 use getopts::Options;
 use libc::{self, pid_t};
 use std::fs;
 use std::io::Write;
+use std::process::exit;
 use std::time::Duration;
 mod pro;
 
@@ -21,10 +21,13 @@ pub fn make_opts() -> Options {
     "s",
     "sort_by",
     "How to sort the processes",
-    "[name|pid|memory|priority|user|state|threads|vmsize|utime|stime]"
+    "[name|pid|memory|priority|user|state|threads|vmsize|utime|stime]",
   );
+  opts.optopt("f", "filter_by", "Filter by", "[name|user|ppid|state]");
+  opts.optopt("", "pattern", "Pattern to filter by", "[PATTERN]");
   opts.optflag("d", "descending", "Sort in descending order");
   opts.optopt("c", "cpu_affinity", "List of cpus", "[CPU]");
+  opts.optflag("a", "all", "Execute on all output processes");
   opts
 }
 
@@ -49,27 +52,8 @@ pub fn read_opts() -> getopts::Matches {
 fn main() {
   let matches = read_opts();
 
-  let pid = matches.opt_get_default::<pid_t>("pid", 0).expect("Invalid pid value");
-  if matches.opt_present("pid") {
-    if matches.opt_present("k") {
-      let kill_signal = matches
-        .opt_get_default::<i32>("k", libc::SIGKILL)
-        .expect("Invalid signal value");
-      pro::kill_process(pid, kill_signal);
-    } else if matches.opt_present("p") {
-      let priority = matches.opt_get_default::<i32>("p", 0).expect("Invalid priority value");
-      pro::set_priority(pid, priority)
-    } else if matches.opt_present("c") {
-      let cpu_list: Vec<usize> = matches
-        .opt_get_default::<String>("c", "".to_string())
-        .iter()
-        .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
-        .collect();
-      let _ = pro::bind_to_cpu_set(pid, &cpu_list);
-    }
-    return;
-  }
-
+  let pid_p = matches.opt_present("pid");
+  let all_p = matches.opt_present("a");
   let refresh_rate = matches
     .opt_get_default::<u64>("r", 1)
     .expect("Invalid refresh rate value");
@@ -86,6 +70,14 @@ fn main() {
     .opt_get_default::<String>("s", "pid".to_string())
     .expect("Invalid sort_by value");
 
+  let filter_by = matches
+    .opt_get_default::<String>("f", "".to_string())
+    .expect("Invalid filter_by value");
+
+  let pattern = matches
+    .opt_get_default::<String>("pattern", "".to_string())
+    .expect("Invalid pattern value");
+
   let descending = matches.opt_present("d");
 
   let output_file = matches
@@ -100,8 +92,48 @@ fn main() {
     .open(output_file)
     .expect("Failed to open log file");
 
+  if pid_p || all_p {
+    let mut pids: Vec<pid_t> = Vec::new();
+    let pid = matches.opt_get_default::<pid_t>("pid", 0).expect("Invalid pid value");
+    if all_p {
+      pids = pro::list_processes(
+        pro::read_processes().unwrap(),
+        0,
+        nprocs,
+        &sort_by,
+        !descending,
+        &filter_by,
+        &pattern,
+      )
+      .unwrap()
+      .iter()
+      .map(|p| p.pid)
+      .collect();
+    } else {
+      pids.push(pid);
+    }
+    if matches.opt_present("k") {
+      let kill_signal = matches
+        .opt_get_default::<i32>("k", libc::SIGKILL)
+        .expect("Invalid signal value");
+      // pro::kill_process(pid, kill_signal);
+      pro::execute_on_with_arg(pids, kill_signal, pro::kill_process);
+    } else if matches.opt_present("p") {
+      let priority = matches.opt_get_default::<i32>("p", 0).expect("Invalid priority value");
+      pro::execute_on_with_arg(pids, priority, pro::set_priority);
+    } else if matches.opt_present("c") {
+      let cpu_list: Vec<usize> = matches
+        .opt_get_default::<String>("c", "".to_string())
+        .iter()
+        .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
+        .collect();
+      let _ = pro::bind_to_cpu_set(pid, &cpu_list);
+    }
+    return;
+  }
+
   while iterations == 0 || current_iteration != iterations {
-    let output = pro::show_stats(nprocs, &sort_by, descending);
+    let output = pro::show_stats(nprocs, &sort_by, descending, &filter_by, &pattern);
     current_iteration += 1;
     // Clear screen and display all at once
     print!("{esc}[2J{esc}[1;1H{}", output, esc = 27 as char);
