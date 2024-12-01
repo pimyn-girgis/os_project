@@ -1,5 +1,21 @@
+use std::io;
+use crossterm::{
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    execute,
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use ratatui::{
+    buffer::Buffer,
+    backend::CrosstermBackend,
+    layout::{Alignment, Constraint, Direction, Layout, Rect},
+    style::{palette::tailwind, Color, Style, Stylize},
+    text::{Span, Text, Line},
+    widgets::{Block, Borders, Gauge, Padding, Paragraph, Widget},
+    Terminal,
+};
 use core::panic;
 use getopts::Options;
+<<<<<<< Updated upstream
 use libc::{self, pid_t, sysinfo};
 use std::collections::HashMap;
 use std::fs;
@@ -337,5 +353,203 @@ fn main() {
 }
 
 
+}
+>>>>>>> Stashed changes
+=======
+use libc::{self, cpu_set_t, pid_t, sched_setaffinity, sysinfo, CPU_SET, CPU_ZERO};
+use std::collections::{BTreeMap, HashMap};
+use std::fs;
+use std::fs::File;
+use std::io::{BufRead, BufReader};
+mod pro;
+
+
+const GAUGE1_COLOR: Color = tailwind::RED.c800;
+const GAUGE2_COLOR: Color = tailwind::GREEN.c800;
+const GAUGE3_COLOR: Color = tailwind::BLUE.c800;
+const GAUGE4_COLOR: Color = tailwind::ORANGE.c800;
+const CUSTOM_LABEL_COLOR: Color = tailwind::SLATE.c200;
+
+
+#[derive(Debug, Default)]
+pub struct App {
+    exit: bool,
+}
+
+impl App {
+    pub fn run(&mut self, terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>) -> io::Result<()> {
+        while !self.exit {
+            terminal.draw(|frame| {
+                self.draw_layout(frame);
+            })?;
+            self.handle_events()?;
+        }
+        Ok(())
+    }
+
+    fn draw_layout(&self, frame: &mut ratatui::Frame) {
+      let area = frame.area();
+  
+      let layout = Layout::default()
+          .direction(Direction::Vertical)
+          .constraints([
+              Constraint::Percentage(30), // Reduced CPU usage section
+              Constraint::Percentage(65), // Expanded process list section
+              Constraint::Percentage(5),  // Buttons section
+          ])
+          .split(area);
+  
+      let titles = [
+          "USER", "PID", "PPID", "STATE", "MEM(MB)", "THREADS", "VIRT_MEM(MB)",
+          "USER_TIME", "SYS_TIME", "PRIORITY", "NAME",
+      ];
+  
+      // Properly handle the Result
+      let processes = match pro::read_processes() {
+          Ok(procs) => procs,
+          Err(e) => {
+              let error_paragraph = Paragraph::new(format!("Error reading processes: {}", e))
+                  .style(Style::default().fg(Color::Red));
+              frame.render_widget(error_paragraph, layout[1]);
+              return;
+          }
+      };
+  
+      // Create a layout for titles and process list
+      let process_layout = Layout::default()
+          .direction(Direction::Vertical)
+          .constraints([
+              Constraint::Length(1), // Space for titles
+              Constraint::Min(0),    // Remaining space for processes
+          ])
+          .split(layout[1]);
+  
+      // Create columns for titles
+      let columns = Layout::default()
+          .direction(Direction::Horizontal)
+          .constraints(
+              titles
+                  .iter()
+                  .map(|_| Constraint::Percentage(100 / titles.len() as u16))
+                  .collect::<Vec<_>>(),
+          )
+          .split(process_layout[0]);
+  
+      // Render titles
+      for (i, title) in titles.iter().enumerate() {
+          let paragraph = Paragraph::new(Line::from(title.green()))
+              .alignment(Alignment::Center);
+          frame.render_widget(paragraph, columns[i]);
+      }
+  
+      let process_rows = Layout::default()
+          .direction(Direction::Vertical)
+          .constraints(
+              processes.iter().map(|_| Constraint::Length(1)).collect::<Vec<_>>(),
+          )
+          .split(process_layout[1]);
+  
+      for (i, process) in processes.iter().enumerate() {
+          let process_data: Vec<String> = vec![
+              process.user.clone(),
+              process.pid.to_string(),
+              process.ppid.to_string(),
+              process.state.to_string(),
+              format!("{:.2} MB", process.memory as f64 / 1024.0 / 1024.0),
+              process.thread_count.to_string(),
+              format!("{:.2} MB", process.virtual_memory as f64 / 1024.0 / 1024.0),
+              process.user_time.to_string(),
+              process.system_time.to_string(),
+              process.priority.to_string(),
+              process.name.clone(),
+          ];
+  
+          let process_columns = Layout::default()
+              .direction(Direction::Horizontal)
+              .constraints(
+                  titles
+                      .iter()
+                      .map(|_| Constraint::Percentage(100 / titles.len() as u16))
+                      .collect::<Vec<_>>(),
+              )
+              .split(process_rows[i]);
+  
+          for (j, data) in process_data.iter().enumerate() {
+              let paragraph = Paragraph::new(Line::from(data.clone())) 
+                  .alignment(Alignment::Center)
+                  .style(Style::default().fg(Color::White));
+              frame.render_widget(paragraph, process_columns[j]);
+          }
+      }
+
+
+      let cpus = Layout::default()
+      .direction(Direction::Vertical)
+      .constraints(
+          [0, 1, 2, 3, 4, 5, 6, 7] // change with the actual list of cpus
+          .iter()
+          .map(|_| Constraint::Percentage(100 / titles.len() as u16))
+          .collect::<Vec<_>>(),
+      ).split(layout[0]);
+
+        for (i, cpu) in cpus.iter().enumerate() {
+            let label = format!("CPU {i}: {:.1}%", 20); // change with the actual cpu usage
+            let usage = Gauge::default()
+                .gauge_style(GAUGE3_COLOR)
+                .ratio(0.2)
+                .label(label);
+            frame.render_widget(usage, cpus[i]);
+        }
+
+        let buttons = ["Help", "Tree", "Search", "SortBy", "Nice", "Kill", "Quit"];
+        let button_layout = Layout::default()
+            .direction(Direction::Horizontal)
+            .constraints(
+                buttons
+                    .iter()
+                    .map(|_| Constraint::Percentage(50 / buttons.len() as u16))
+                    .collect::<Vec<_>>(),
+            )
+            .split(layout[2]);
+
+        for (i, label) in buttons.iter().enumerate() {
+            let paragraph = Paragraph::new(Line::from(label.green())).alignment(Alignment::Center);
+            frame.render_widget(paragraph, button_layout[i]);
+        }
+    }
+
+    fn handle_events(&mut self) -> io::Result<()> {
+        match event::read()? {
+            Event::Key(key_event) if key_event.kind == KeyEventKind::Press => {
+                self.handle_key_event(key_event)
+            }
+            _ => {}
+        };
+        Ok(())
+    }
+
+    fn handle_key_event(&mut self, key_event: KeyEvent) {
+        match key_event.code {
+            KeyCode::Char('q') => self.exit(),
+            _ => {}
+        }
+    }
+
+    fn exit(&mut self) {
+        self.exit = true;
+    }
+}
+
+fn main() -> io::Result<()> {
+  
+    enable_raw_mode()?;
+    let mut stdout = io::stdout();
+    execute!(stdout, EnterAlternateScreen)?;
+    let backend = CrosstermBackend::new(stdout);
+    let mut terminal = Terminal::new(backend)?;
+    let app_result = App::default().run(&mut terminal);
+    disable_raw_mode()?;
+    execute!(terminal.backend_mut(), LeaveAlternateScreen)?;
+    app_result
 }
 >>>>>>> Stashed changes
