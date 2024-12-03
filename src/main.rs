@@ -360,11 +360,11 @@ impl ProcessManagerApp {
         let header = row![
             button("User").on_press(Message::SortByUser).width(Length::FillPortion(1)),
             button("PID").on_press(Message::SortByPid).width(Length::FillPortion(1)),
-            button("Memory(MB)").on_press(Message::SortByMemory).width(Length::FillPortion(1)),
+            button("Mem(MB)").on_press(Message::SortByMemory).width(Length::FillPortion(1)),
             button("Priority").on_press(Message::SortByPriority).width(Length::FillPortion(1)),
             button("State").on_press(Message::SortByState).width(Length::FillPortion(1)),
             button("Threads").on_press(Message::SortByThreads).width(Length::FillPortion(1)),
-            button("VIRT_MEM(MB)").on_press(Message::SortByVMSize).width(Length::FillPortion(1)),
+            button("V_MEM(MB)").on_press(Message::SortByVMSize).width(Length::FillPortion(1)),
             button("U_time").on_press(Message::SortByUserTime).width(Length::FillPortion(1)),
             button("S_time").on_press(Message::SortBySystemTime).width(Length::FillPortion(1)),
             button("Name").on_press(Message::SortByName).width(Length::FillPortion(3)),
@@ -452,7 +452,8 @@ impl iced::widget::button::StyleSheet for RegularRowStyle {
     }
 }
 
+
 // Add main function
 fn main() -> iced::Result {
-    ProcessManagerApp::run(Settings::default())
+  ProcessManagerApp::run(Settings::default())
 }

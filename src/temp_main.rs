@@ -1,255 +1,459 @@
-// main.rs
-
-use iced::{
-  executor, Application, Command, Element, Length, Settings, Theme,
-};
-
-use iced::widget::{Button, Column, Row, Scrollable, Text};
+use iced::widget::{button, column, container, row, text, text_input, Scrollable, Space};
+use iced::{Alignment, Element, Length, Application, Command, Settings, Subscription};
+use libc::pid_t;
+use std::time::{Duration, Instant};
 
 mod pro;
-use pro::{
-  build_tree, get_cpu_usage, get_priority, get_sysinfo, kill_process, read_process_info,
-  read_processes, set_priority, ProcessInfo,
-};
+
+// Main application state
+struct ProcessManagerApp {
+    processes: Vec<pro::ProcessInfo>,
+    filtered_processes: Vec<pro::ProcessInfo>,
+    sort_column: String,
+    sort_ascending: bool,
+    search_input: String,
+    selected_process_pid: Option<pid_t>,
+    show_help: bool,
+}
 
 #[derive(Debug, Clone)]
 enum Message {
-  ProcessSelected(usize), // index in the processes vector
-  HelpPressed,
-  TreePressed,
-  SearchPressed,
-  NicePressed,
-  KillPressed,
-  QuitPressed,
+    SortByName,
+    SortByPid,
+    SortByUser,
+    SortByPriority,
+    SortByState,
+    SortByThreads,
+    SortByUserTime,
+    SortBySystemTime,
+    SortByVMSize,
+    SortByMemory,
+    SearchInputChanged(String),
+    SearchProcess,
+    ShowProcessTree,
+    NiceProcess,
+    KillProcess,
+    Quit,
+    RefreshProcesses,
+    ProcessSelected(pid_t),
+    Help,
+    CloseHelp,
+    Tick(Instant),
 }
 
-struct ProcessManager {
-  processes: Vec<ProcessInfo>,
-  selected_process: Option<usize>, // index of the selected process
+impl Application for ProcessManagerApp {
+    type Message = Message;
+    type Executor = iced::executor::Default;
+    type Theme = iced::Theme;
+    type Flags = ();
+
+    fn new(_flags: ()) -> (Self, Command<Message>) {
+        let processes = pro::read_processes().unwrap_or_default();
+        let mut app = Self {
+            processes: processes.clone(),
+            filtered_processes: processes,
+            sort_column: "pid".to_string(),
+            sort_ascending: true,
+            search_input: String::new(),
+            selected_process_pid: None,
+            show_help: false,
+        };
+        app.apply_filters_and_sorting();
+        (app, Command::none())
+    }
+
+    fn title(&self) -> String {
+        "Linux Process Manager".to_string()
+    }
+
+    fn update(&mut self, message: Message) -> Command<Message> {
+        match message {
+            Message::SortByName => {
+                if self.sort_column == "name" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "name".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByPid => {
+                if self.sort_column == "pid" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "pid".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByUser => {
+                if self.sort_column == "user" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "user".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByPriority => {
+                if self.sort_column == "priority" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "priority".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByMemory => {
+                if self.sort_column == "memory" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "memory".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByVMSize => {
+                if self.sort_column == "vmsize" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "vmsize".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByState => {
+                if self.sort_column == "state" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "state".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByThreads => {
+                if self.sort_column == "threads" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "threads".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortByUserTime => {
+                if self.sort_column == "utime" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "utime".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SortBySystemTime => {
+                if self.sort_column == "stime" {
+                    self.sort_ascending = !self.sort_ascending;
+                } else {
+                    self.sort_column = "stime".to_string();
+                    self.sort_ascending = true;
+                }
+                self.apply_filters_and_sorting();
+            }
+            Message::SearchInputChanged(input) => {
+                self.search_input = input;
+                self.apply_filters_and_sorting();
+            }
+            Message::SearchProcess => {
+                self.apply_filters_and_sorting();
+            }
+            Message::ShowProcessTree => {
+                // Implement process tree view
+                if let Some(root_pid) = self.selected_process_pid {
+                    let tree = pro::build_tree(&self.processes, root_pid);
+                    println!("Process Tree for PID {}:", root_pid);
+                    tree.print(0);
+                }
+            }
+            Message::NiceProcess => {
+                if let Some(pid) = self.selected_process_pid {
+                    pro::set_priority(pid, 10);
+                    println!("Changed priority of process {}", pid);
+                }
+            }
+            Message::KillProcess => {
+                if let Some(pid) = self.selected_process_pid {
+                    pro::kill_process(pid, libc::SIGTERM);
+                    println!("Sent SIGTERM to process {}", pid);
+                }
+            }
+            Message::RefreshProcesses => {
+                if let Ok(new_processes) = pro::read_processes() {
+                    self.processes = new_processes;
+                    self.apply_filters_and_sorting();
+                }
+            }
+            Message::Quit => {
+                std::process::exit(0);
+            }
+            Message::ProcessSelected(pid) => {
+                self.selected_process_pid = Some(pid);
+            }
+            Message::Help => {
+                self.show_help = true;
+            }
+            Message::CloseHelp => {
+                self.show_help = false;
+            }
+            Message::Tick(_instant) => {
+                // Periodic update
+                if let Ok(new_processes) = pro::read_processes() {
+                    self.processes = new_processes;
+                    self.apply_filters_and_sorting();
+                }
+            }
+        }
+        Command::none()
+    }
+
+    fn view(&self) -> Element<Message> {
+        if self.show_help {
+            // Display help content
+            let content = column![
+                text("Help").size(30),
+                text("This is a Linux Process Manager application.").size(20),
+                text("Use the buttons to sort, filter, and manage processes.").size(20),
+                text("Select a process by clicking on it in the list.").size(20),
+                text("Then you can kill or nice the selected process.").size(20),
+                text("Buttons:").size(20),
+                text("- Help: Show this help message.").size(16),
+                text("- Tree: Display the process tree starting from the selected process.").size(16),
+                text("- Nice: Change the priority of the selected process.").size(16),
+                text("- Kill: Terminate the selected process.").size(16),
+                text("- Refresh: Manually refresh the process list.").size(16),
+                text("- Quit: Exit the application.").size(16),
+                button("Close").on_press(Message::CloseHelp),
+            ]
+            .padding(20)
+            .spacing(10);
+
+            container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x()
+                .center_y()
+                .into()
+        } else {
+            let system_info = self.render_system_info();
+            let process_table = self.render_process_table();
+            let action_buttons = self.render_action_buttons();
+
+            let content = column![
+                system_info,
+                process_table,
+                action_buttons
+            ]
+            .spacing(10)
+            .padding(10);
+
+            container(content)
+                .width(Length::Fill)
+                .height(Length::Fill)
+                .center_x()
+                .center_y()
+                .into()
+        }
+    }
+
+    // fn subscription(&self) -> Subscription<Message> {
+    //     // Implement periodic refresh using a custom subscription
+    //     iced::time::every(Duration::from_secs(2)).map(Message::Tick)
+    // }
 }
 
-impl Application for ProcessManager {
-  type Message = Message;
-  type Executor = executor::Default;
-  type Flags = ();
-  type Theme = Theme;
+impl ProcessManagerApp {
+    fn apply_filters_and_sorting(&mut self) {
+        // Filter processes according to self.search_input
+        if self.search_input.is_empty() {
+            self.filtered_processes = self.processes.clone();
+        } else {
+            let pattern = self.search_input.to_lowercase();
+            self.filtered_processes = self.processes.iter()
+                .filter(|p| p.name.to_lowercase().contains(&pattern) || p.user.to_lowercase().contains(&pattern))
+                .cloned()
+                .collect();
+        }
 
-  fn new(_flags: ()) -> (ProcessManager, Command<Message>) {
-      let processes = read_processes().unwrap_or_default();
-      (
-          ProcessManager {
-              processes,
-              selected_process: None,
-          },
-          Command::none(),
-      )
-  }
+        // Sort processes according to self.sort_column and self.sort_ascending
+        match self.sort_column.as_str() {
+            "name" => self.filtered_processes.sort_by_key(|p| p.name.clone()),
+            "pid" => self.filtered_processes.sort_by_key(|p| p.pid),
+            "user" => self.filtered_processes.sort_by_key(|p| p.user.clone()),
+            "priority" => self.filtered_processes.sort_by_key(|p| p.priority),
+            "memory" => self.filtered_processes.sort_by_key(|p| p.memory),
+            "vmsize" => self.filtered_processes.sort_by_key(|p| p.virtual_memory),
+            "state" => self.filtered_processes.sort_by_key(|p| p.state),
+            "threads" => self.filtered_processes.sort_by_key(|p| p.thread_count),
+            "utime" => self.filtered_processes.sort_by_key(|p| p.user_time),
+            "stime" => self.filtered_processes.sort_by_key(|p| p.system_time),
+            _ => {},
+        }
 
-  fn title(&self) -> String {
-      String::from("Process Manager")
-  }
+        if !self.sort_ascending {
+            self.filtered_processes.reverse();
+        }
+    }
 
-  fn update(&mut self, message: Message) -> Command<Message> {
-      match message {
-          Message::ProcessSelected(index) => {
-              self.selected_process = Some(index);
-          }
-          Message::HelpPressed => {
-              // Display help information
-              println!("Help: This is a process manager. You can select processes and perform actions.");
-          }
-          Message::TreePressed => {
-              // Display process tree
-              let tree = build_tree(&self.processes, 1); // Assuming PID 1 is the root
-              tree.print(0);
-          }
-          Message::SearchPressed => {
-              // Reload processes (you can implement a search dialog here)
-              self.processes = read_processes().unwrap_or_default();
-          }
-          Message::NicePressed => {
-              if let Some(index) = self.selected_process {
-                  let pid = self.processes[index].pid;
-                  // Increase niceness (reduce priority)
-                  let current_priority = get_priority(pid);
-                  set_priority(pid, current_priority + 1);
-                  // Update process info
-                  if let Ok(updated_process) = read_process_info(pid) {
-                      self.processes[index] = updated_process;
-                  } else {
-                      // Process may have terminated
-                      self.processes.remove(index);
-                      self.selected_process = None;
-                  }
-              }
-          }
-          Message::KillPressed => {
-              if let Some(index) = self.selected_process {
-                  let pid = self.processes[index].pid;
-                  kill_process(pid, 9); // Send SIGKILL
-                  // Remove the process from the list
-                  self.processes.remove(index);
-                  self.selected_process = None;
-              }
-          }
-          Message::QuitPressed => {
-              // Exit the application
-              std::process::exit(0);
-          }
-      }
-      Command::none()
-  }
+    fn render_system_info(&self) -> Element<Message> {
+        let system_info = pro::get_sysinfo();
+        let cpu_usages = pro::get_cpu_usage().unwrap_or_default();
+        let mem_unit = 1_000_000 / system_info.mem_unit as u64;
 
-  fn view(&self) -> Element<Message> {
-      // Get system info
-      let system_info = get_sysinfo();
-      let mem_unit = 1_000_000 / system_info.mem_unit as u64;
+        let info_text = column![
+            text(format!("Total RAM: {} MB", system_info.totalram / mem_unit)),
+            text(format!("Shared RAM: {} MB", system_info.sharedram / mem_unit)),
+            text(format!("Free RAM: {} MB", system_info.freeram / mem_unit)),
+            text(format!("Buffer RAM: {} MB", system_info.bufferram / mem_unit)),
+            text(format!("Total Swap: {} MB", system_info.totalswap / mem_unit)),
+            text(format!("Free Swap: {} MB", system_info.freeswap / mem_unit)),
+            text(format!("Uptime: {} seconds", system_info.uptime)),
+            text(format!("Loads: {:?}", system_info.loads)),
+            text("CPU Usage:"),
+            text(format!("Total: {:.2}%", cpu_usages.first().unwrap_or(&0.0))),
+        ]
+        .spacing(5);
 
-      let mut stats_column = Column::new().spacing(5);
+        container(info_text)
+            .padding(10)
+            .into()
+    }
 
-      stats_column = stats_column
-          .push(Text::new(format!(
-              "totalram: {}",
-              system_info.totalram / mem_unit
-          )))
-          .push(Text::new(format!(
-              "sharedram: {}",
-              system_info.sharedram / mem_unit
-          )))
-          .push(Text::new(format!(
-              "freeram: {}",
-              system_info.freeram / mem_unit
-          )))
-          .push(Text::new(format!(
-              "bufferram: {}",
-              system_info.bufferram / mem_unit
-          )))
-          .push(Text::new(format!(
-              "totalswap: {}",
-              system_info.totalswap / mem_unit
-          )))
-          .push(Text::new(format!(
-              "freeswap: {}",
-              system_info.freeswap / mem_unit
-          )))
-          .push(Text::new(format!("uptime: {}", system_info.uptime)))
-          .push(Text::new(format!("loads: {:?}", system_info.loads)));
+    fn render_process_table(&self) -> Element<Message> {
+        let processes_list = self.filtered_processes.iter().map(|process| {
+            let row_content = row![
+                text(&process.user).width(Length::FillPortion(1)),
+                text(&process.pid.to_string()).width(Length::FillPortion(1)),
+                text(&(process.memory / 1000).to_string()).width(Length::FillPortion(1)),
+                text(&process.priority.to_string()).width(Length::FillPortion(1)),
+                text(&process.state.to_string()).width(Length::FillPortion(1)),
+                text(&process.thread_count.to_string()).width(Length::FillPortion(1)),
+                text(&(process.virtual_memory / 1000).to_string()).width(Length::FillPortion(1)),
+                text(&process.user_time.to_string()).width(Length::FillPortion(1)),
+                text(&process.system_time.to_string()).width(Length::FillPortion(1)),
+                text(&process.name).width(Length::FillPortion(3)),
+            ]
+            .spacing(15)
+            .padding(5)
+            .align_items(Alignment::Center);
 
-      match get_cpu_usage() {
-          Ok(cpu_usage) => {
-              stats_column = stats_column.push(Text::new("CPU Usage:"));
-              for (i, usage) in cpu_usage.iter().enumerate() {
-                  if i == 0 {
-                      stats_column =
-                          stats_column.push(Text::new(format!("Total CPU: {:.2}%", usage)));
-                  } else {
-                      stats_column =
-                          stats_column.push(Text::new(format!("Core {}: {:.2}%", i, usage)));
-                  }
-              }
-          }
-          Err(e) => {
-              stats_column =
-                  stats_column.push(Text::new(format!("Error retrieving CPU usage: {}", e)));
-          }
-      }
+            let row_element: Element<_> = if Some(process.pid) == self.selected_process_pid {
+                container(row_content)
+                    .style(iced::theme::Container::Custom(Box::new(SelectedRowStyle)))
+                    .into()
+            } else {
+                button(row_content)
+                    .on_press(Message::ProcessSelected(process.pid))
+                    .style(iced::theme::Button::Custom(Box::new(RegularRowStyle)))
+                    .into()
+            };
+            row_element
+        }).collect::<Vec<Element<Message>>>();
 
-      let mut process_list = Column::new();
+        let header = row![
+            button("User").on_press(Message::SortByUser).width(Length::FillPortion(1)),
+            button("PID").on_press(Message::SortByPid).width(Length::FillPortion(1)),
+            button("Mem(MB)").on_press(Message::SortByMemory).width(Length::FillPortion(1)),
+            button("Priority").on_press(Message::SortByPriority).width(Length::FillPortion(1)),
+            button("State").on_press(Message::SortByState).width(Length::FillPortion(1)),
+            button("Threads").on_press(Message::SortByThreads).width(Length::FillPortion(1)),
+            button("V_MEM(MB)").on_press(Message::SortByVMSize).width(Length::FillPortion(1)),
+            button("U_time").on_press(Message::SortByUserTime).width(Length::FillPortion(1)),
+            button("S_time").on_press(Message::SortBySystemTime).width(Length::FillPortion(1)),
+            button("Name").on_press(Message::SortByName).width(Length::FillPortion(3)),
+        ]
+        .spacing(15)
+        .align_items(Alignment::Center)
+        .padding(5);
 
-      // Header row
-      process_list = process_list.push(
-          Row::new()
-              .push(Text::new("UID").width(Length::Fixed(50.0)))
-              .push(Text::new("PID").width(Length::Fixed(50.0)))
-              .push(Text::new("PPID").width(Length::Fixed(50.0)))
-              .push(Text::new("STATE").width(Length::Fixed(50.0)))
-              .push(Text::new("MEM(MB)").width(Length::Fixed(70.0)))
-              .push(Text::new("THREADS").width(Length::Fixed(70.0)))
-              .push(Text::new("VIRT_MEM(MB)").width(Length::Fixed(100.0)))
-              .push(Text::new("USER_TIME").width(Length::Fixed(80.0)))
-              .push(Text::new("SYS_TIME").width(Length::Fixed(80.0)))
-              .push(Text::new("Priority").width(Length::Fixed(70.0)))
-              .push(Text::new("Name").width(Length::Fixed(150.0))),
-      );
+        let scrollable_processes = Scrollable::new(column(processes_list).spacing(5))
+            .width(Length::Fill)
+            .height(Length::Fill);
 
-      for (index, process) in self.processes.iter().enumerate() {
-          let row = Row::new()
-              .push(Text::new(&process.user).width(Length::Fixed(50.0)))
-              .push(
-                  Text::new(process.pid.to_string()).width(Length::Fixed(50.0)),
-              )
-              .push(
-                  Text::new(process.ppid.to_string()).width(Length::Fixed(50.0)),
-              )
-              .push(
-                  Text::new(process.state.to_string()).width(Length::Fixed(50.0)),
-              )
-              .push(
-                  Text::new((process.memory / 1000).to_string()).width(Length::Fixed(70.0)),
-              )
-              .push(
-                  Text::new(process.thread_count.to_string()).width(Length::Fixed(70.0)),
-              )
-              .push(
-                  Text::new((process.virtual_memory / 1000).to_string())
-                      .width(Length::Fixed(100.0)),
-              )
-              .push(
-                  Text::new(process.user_time.to_string()).width(Length::Fixed(80.0)),
-              )
-              .push(
-                  Text::new(process.system_time.to_string()).width(Length::Fixed(80.0)),
-              )
-              .push(
-                  Text::new(process.priority.to_string()).width(Length::Fixed(70.0)),
-              )
-              .push(Text::new(&process.name).width(Length::Fixed(150.0)));
+        column![
+            header,
+            Space::with_height(Length::Fixed(10.0)),
+            scrollable_processes
+        ]
+        .padding(10)
+        .into()
+    }
 
-          let row_button = Button::new(row)
-              .on_press(Message::ProcessSelected(index));
+    fn render_action_buttons(&self) -> Element<Message> {
+        let buttons = row![
+            button("Help").on_press(Message::Help),
+            button("Tree").on_press(Message::ShowProcessTree),
+            text_input("Search", &self.search_input)
+                .on_input(Message::SearchInputChanged)
+                .on_submit(Message::SearchProcess)
+                .padding(5)
+                .width(Length::Fixed(200.0)),
+            button("Nice").on_press(Message::NiceProcess),
+            button("Kill").on_press(Message::KillProcess),
+            button("Refresh").on_press(Message::RefreshProcesses),
+            button("Quit").on_press(Message::Quit)
+        ]
+        .spacing(10)
+        .align_items(Alignment::Center);
 
-          process_list = process_list.push(row_button);
-      }
-
-      // Adjusted code here
-      let scrollable = Scrollable::new(process_list)
-          .height(Length::Fill)
-          .width(Length::Fill);
-
-      // Buttons
-      let buttons = Row::new()
-          .spacing(10)
-          .padding(10)
-          .push(
-              Button::new(Text::new("Help")).on_press(Message::HelpPressed),
-          )
-          .push(
-              Button::new(Text::new("Tree")).on_press(Message::TreePressed),
-          )
-          .push(
-              Button::new(Text::new("Search")).on_press(Message::SearchPressed),
-          )
-          .push(
-              Button::new(Text::new("Nice")).on_press(Message::NicePressed),
-          )
-          .push(
-              Button::new(Text::new("Kill")).on_press(Message::KillPressed),
-          )
-          .push(
-              Button::new(Text::new("Quit")).on_press(Message::QuitPressed),
-          );
-
-      let content = Column::new()
-          .push(stats_column)
-          .push(scrollable)
-          .push(buttons)
-          .spacing(10)
-          .padding(10);
-
-      content.into()
-  }
+        container(buttons)
+            .padding(10)
+            .center_x()
+            .into()
+    }
 }
 
-// fn main() {
-//   ProcessManager::run(Settings::default());
-// }
+// Custom styles for selected and regular rows
+struct SelectedRowStyle;
+
+impl iced::widget::container::StyleSheet for SelectedRowStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(iced::Color::from_rgb(0.9, 0.9, 1.0).into()),
+            border: Default::default(),
+            shadow: Default::default(),
+            text_color: None,
+        }
+    }
+}
+
+struct RegularRowStyle;
+
+impl iced::widget::button::StyleSheet for RegularRowStyle {
+    type Style = iced::Theme;
+
+    fn active(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(iced::Color::from_rgb(1.0, 1.0, 1.0).into()),
+            border: Default::default(),
+            shadow_offset: Default::default(), // Added this line
+            shadow: Default::default(),        // Added this line
+            text_color: iced::Color::BLACK,
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(iced::Color::from_rgb(0.95, 0.95, 0.95).into()),
+            border: Default::default(),
+            shadow_offset: Default::default(), // Added this line
+            shadow: Default::default(),        // Added this line
+            text_color: iced::Color::BLACK,
+        }
+    }
+}
+
+
+// Add main function
+fn main() -> iced::Result {
+  ProcessManagerApp::run(Settings::default())
+}
