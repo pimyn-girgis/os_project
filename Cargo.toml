@@ -10,3 +10,5 @@ libc = "0.2"
 affinity = "0.1.2"
 getopts = "0.2.21"
 iced = "0.12"
+gtk = { version = "0.15", features = ["v3_22"] }
+glib = "0.15"
