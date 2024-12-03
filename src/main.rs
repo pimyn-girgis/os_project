@@ -1,6 +1,7 @@
 use iced::widget::{button, column, container, row, text, text_input, Scrollable, Space};
-use iced::{Alignment, Element, Length, Application, Command, Settings};
+use iced::{Alignment, Element, Length, Application, Command, Settings, Subscription};
 use libc::pid_t;
+use std::time::{Duration, Instant};
 
 mod pro;
 
@@ -15,7 +16,6 @@ struct ProcessManagerApp {
     show_help: bool,
 }
 
-// Define messages for interaction
 #[derive(Debug, Clone)]
 enum Message {
     SortByName,
@@ -35,10 +35,10 @@ enum Message {
     KillProcess,
     Quit,
     RefreshProcesses,
-    Tick,
     ProcessSelected(pid_t),
     Help,
     CloseHelp,
+    Tick(Instant),
 }
 
 impl Application for ProcessManagerApp {
@@ -63,7 +63,7 @@ impl Application for ProcessManagerApp {
     }
 
     fn title(&self) -> String {
-        "Amr ElKady Pro".to_string()
+        "Linux Process Manager".to_string()
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
@@ -166,16 +166,23 @@ impl Application for ProcessManagerApp {
                 self.apply_filters_and_sorting();
             }
             Message::ShowProcessTree => {
-                // TODO: Implement process tree view
+                // Implement process tree view
+                if let Some(root_pid) = self.selected_process_pid {
+                    let tree = pro::build_tree(&self.processes, root_pid);
+                    println!("Process Tree for PID {}:", root_pid);
+                    tree.print(0);
+                }
             }
             Message::NiceProcess => {
                 if let Some(pid) = self.selected_process_pid {
                     pro::set_priority(pid, 10);
+                    println!("Changed priority of process {}", pid);
                 }
             }
             Message::KillProcess => {
                 if let Some(pid) = self.selected_process_pid {
                     pro::kill_process(pid, libc::SIGTERM);
+                    println!("Sent SIGTERM to process {}", pid);
                 }
             }
             Message::RefreshProcesses => {
@@ -187,12 +194,6 @@ impl Application for ProcessManagerApp {
             Message::Quit => {
                 std::process::exit(0);
             }
-            Message::Tick => {
-                if let Ok(new_processes) = pro::read_processes() {
-                    self.processes = new_processes;
-                    self.apply_filters_and_sorting();
-                }
-            }
             Message::ProcessSelected(pid) => {
                 self.selected_process_pid = Some(pid);
             }
@@ -201,6 +202,13 @@ impl Application for ProcessManagerApp {
             }
             Message::CloseHelp => {
                 self.show_help = false;
+            }
+            Message::Tick(_instant) => {
+                // Periodic update
+                if let Ok(new_processes) = pro::read_processes() {
+                    self.processes = new_processes;
+                    self.apply_filters_and_sorting();
+                }
             }
         }
         Command::none()
@@ -215,6 +223,13 @@ impl Application for ProcessManagerApp {
                 text("Use the buttons to sort, filter, and manage processes.").size(20),
                 text("Select a process by clicking on it in the list.").size(20),
                 text("Then you can kill or nice the selected process.").size(20),
+                text("Buttons:").size(20),
+                text("- Help: Show this help message.").size(16),
+                text("- Tree: Display the process tree starting from the selected process.").size(16),
+                text("- Nice: Change the priority of the selected process.").size(16),
+                text("- Kill: Terminate the selected process.").size(16),
+                text("- Refresh: Manually refresh the process list.").size(16),
+                text("- Quit: Exit the application.").size(16),
                 button("Close").on_press(Message::CloseHelp),
             ]
             .padding(20)
@@ -247,6 +262,11 @@ impl Application for ProcessManagerApp {
                 .into()
         }
     }
+
+    // fn subscription(&self) -> Subscription<Message> {
+    //     // Implement periodic refresh using a custom subscription
+    //     iced::time::every(Duration::from_secs(2)).map(Message::Tick)
+    // }
 }
 
 impl ProcessManagerApp {
@@ -326,10 +346,12 @@ impl ProcessManagerApp {
 
             let row_element: Element<_> = if Some(process.pid) == self.selected_process_pid {
                 container(row_content)
+                    .style(iced::theme::Container::Custom(Box::new(SelectedRowStyle)))
                     .into()
             } else {
                 button(row_content)
                     .on_press(Message::ProcessSelected(process.pid))
+                    .style(iced::theme::Button::Custom(Box::new(RegularRowStyle)))
                     .into()
             };
             row_element
@@ -375,6 +397,7 @@ impl ProcessManagerApp {
                 .width(Length::Fixed(200.0)),
             button("Nice").on_press(Message::NiceProcess),
             button("Kill").on_press(Message::KillProcess),
+            button("Refresh").on_press(Message::RefreshProcesses),
             button("Quit").on_press(Message::Quit)
         ]
         .spacing(10)
@@ -384,6 +407,48 @@ impl ProcessManagerApp {
             .padding(10)
             .center_x()
             .into()
+    }
+}
+
+// Custom styles for selected and regular rows
+struct SelectedRowStyle;
+
+impl iced::widget::container::StyleSheet for SelectedRowStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(iced::Color::from_rgb(0.9, 0.9, 1.0).into()),
+            border: Default::default(),
+            shadow: Default::default(),
+            text_color: None,
+        }
+    }
+}
+
+struct RegularRowStyle;
+
+impl iced::widget::button::StyleSheet for RegularRowStyle {
+    type Style = iced::Theme;
+
+    fn active(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(iced::Color::from_rgb(1.0, 1.0, 1.0).into()),
+            border: Default::default(),
+            shadow_offset: Default::default(), // Added this line
+            shadow: Default::default(),        // Added this line
+            text_color: iced::Color::BLACK,
+        }
+    }
+
+    fn hovered(&self, _style: &Self::Style) -> iced::widget::button::Appearance {
+        iced::widget::button::Appearance {
+            background: Some(iced::Color::from_rgb(0.95, 0.95, 0.95).into()),
+            border: Default::default(),
+            shadow_offset: Default::default(), // Added this line
+            shadow: Default::default(),        // Added this line
+            text_color: iced::Color::BLACK,
+        }
     }
 }
 
