@@ -1,167 +1,251 @@
-use core::panic;
-use getopts::Options;
-use libc::{self, pid_t};
-use std::fs;
-use std::io::Write;
-use std::process::exit;
-use std::time::Duration;
+use iced::widget::{
+  button, column, container, row, 
+  text, text_input, 
+};
+use iced::{Alignment, Element, Length, Application, Command, Settings};
+use iced::widget::Scrollable;
+
 mod pro;
 
-pub fn make_opts() -> Options {
-  let mut opts = Options::new();
-  opts.optopt("r", "refresh_rate", "Stats refresh rate", "[NUM]");
-  opts.optopt("n", "nprocs", "Max number of processes to show", "[NUM]");
-  opts.optopt("k", "kill", "Kill process with signal", "[SIG]");
-  opts.optopt("i", "iters", "Number of iterations", "[NUM]");
-  opts.optflag("h", "help", "Print help message");
-  opts.optopt("p", "priority", "Priority of process", "[PRIO]");
-  opts.optopt("o", "output", "output file (logs)", "[FILE]");
-  opts.optopt("", "pid", "pid of process", "[PID]");
-  opts.optopt(
-    "s",
-    "sort_by",
-    "How to sort the processes",
-    "[name|pid|memory|priority|user|state|threads|vmsize|utime|stime]",
-  );
-  opts.optopt("f", "filter_by", "Filter by", "[name|user|ppid|state]");
-  opts.optopt("", "pattern", "Pattern to filter by", "[PATTERN]");
-  opts.optflag("e", "exact_match", "The pattern should be an exact match");
-  opts.optflag("d", "descending", "Sort in descending order");
-  opts.optopt("c", "cpu_affinity", "List of cpus", "[CPU]");
-  opts.optflag("a", "all", "Execute on all output processes");
-  opts.optflag("t", "tree", "print process tree");
-  opts
+// Main application state
+struct ProcessManagerApp {
+  processes: Vec<pro::ProcessInfo>,
+  sort_column: String,
+  sort_ascending: bool,
+  search_input: String,
+  selected_process_pid: Option<i32>,
 }
 
-pub fn read_opts() -> getopts::Matches {
-  let args: Vec<String> = std::env::args().collect();
-  let opts = make_opts();
-  let matches = match opts.parse(&args[1..]) {
-    Ok(m) => m,
-    Err(f) => {
-      panic!("{}", f);
-    }
-  };
-
-  if matches.opt_present("h") {
-    pro::print_usage(&args[0], opts);
-    exit(0);
-  }
-
-  matches
+// Define messages for interaction
+#[derive(Debug, Clone)]
+enum Message {
+  SortByName,
+  SortByPid,
+  SortByUser,
+  SortByPriority,
+  SortByState,
+  SortByThreads,
+  SortByUserTime,
+  SortBySystemTime,
+  SortByVMSize,
+  SortByMemory,
+  SearchInputChanged(String),
+  SearchProcess,
+  ShowProcessTree,
+  NiceProcess,
+  KillProcess,
+  Quit,
+  RefreshProcesses,
+  Tick,
 }
 
-fn main() {
-  let matches = read_opts();
+impl Application for ProcessManagerApp {
+  type Message = Message;
+  type Executor = iced::executor::Default;
+  type Theme = iced::Theme;
+  type Flags = ();
 
-  let pid_p = matches.opt_present("pid");
-  let all_p = matches.opt_present("a");
-  let refresh_rate = matches
-    .opt_get_default::<u64>("r", 1)
-    .expect("Invalid refresh rate value");
-
-  let nprocs = matches
-    .opt_get_default::<usize>("n", usize::MAX)
-    .expect("Invalid nprocs value");
-
-  let iterations = matches
-    .opt_get_default::<u32>("i", 0)
-    .expect("Invalid iterations value");
-
-  let sort_by = matches
-    .opt_get_default::<String>("s", "pid".to_string())
-    .expect("Invalid sort_by value");
-
-  let filter_by = matches
-    .opt_get_default::<String>("f", "".to_string())
-    .expect("Invalid filter_by value");
-
-  let pattern = matches
-    .opt_get_default::<String>("pattern", "".to_string())
-    .expect("Invalid pattern value");
-
-  let descending = matches.opt_present("d");
-
-  let output_file = matches
-    .opt_get_default::<String>("o", "/tmp/procstat.log".to_string())
-    .expect("Invalid output file value");
-
-  let mut current_iteration = 0;
-  let mut log_file = fs::OpenOptions::new()
-    .create(true)
-    .truncate(true)
-    .write(true)
-    .open(output_file)
-    .expect("Failed to open log file");
-  let exact_match = matches.opt_present("e");
-
-  if pid_p || all_p {
-    let mut pids: Vec<pid_t> = Vec::new();
-    let pid = matches.opt_get_default::<pid_t>("pid", 0).expect("Invalid pid value");
-    if all_p {
-      pids = pro::list_processes(
-        pro::read_processes().unwrap(),
-        0,
-        nprocs,
-        &sort_by,
-        !descending,
-        &filter_by,
-        &pattern,
-        exact_match,
-      )
-      .unwrap()
-      .iter()
-      .map(|p| p.pid)
-      .collect();
-    } else {
-      pids.push(pid);
-    }
-    if matches.opt_present("k") {
-      let kill_signal = matches
-        .opt_get_default::<i32>("k", libc::SIGKILL)
-        .expect("Invalid signal value");
-      // pro::kill_process(pid, kill_signal);
-      pro::execute_on_with_arg(pids, kill_signal, pro::kill_process);
-    } else if matches.opt_present("p") {
-      let priority = matches.opt_get_default::<i32>("p", 0).expect("Invalid priority value");
-      pro::execute_on_with_arg(pids, priority, pro::set_priority);
-    } else if matches.opt_present("c") {
-      let cpu_list: Vec<usize> = matches
-        .opt_get_default::<String>("c", "".to_string())
-        .iter()
-        .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
-        .collect();
-      pro::execute_on_with_args::<usize>(pids, &cpu_list, pro::bind_to_cpu_set);
-    }
-    return;
+  fn new(_flags: ()) -> (Self, Command<Message>) {
+      let processes = pro::read_processes().unwrap_or_default().into_iter().take(50).collect::<Vec<_>>();
+      let app = Self {
+          processes,
+          sort_column: "pid".to_string(),
+          sort_ascending: true,
+          search_input: String::new(),
+          selected_process_pid: None,
+      };
+      (app, Command::none())
   }
 
-  if matches.opt_present("t") {
-    pro::build_tree(
-      &pro::list_processes(
-        pro::read_processes().unwrap(),
-        0,
-        nprocs,
-        &sort_by,
-        !descending,
-        &filter_by,
-        &pattern,
-        exact_match,
-      ).unwrap(),
-      0,
-    ).print(0);
-
-    return;
+  fn title(&self) -> String {
+      "Linux Process Manager".to_string()
   }
 
-  while iterations == 0 || current_iteration != iterations {
-    let output = pro::show_stats(nprocs, &sort_by, descending, &filter_by, &pattern, exact_match);
-    current_iteration += 1;
-    // Clear screen and display all at once
-    print!("{esc}[2J{esc}[1;1H{}", output, esc = 27 as char);
-    std::io::stdout().flush().unwrap();
-
-    std::thread::sleep(Duration::from_secs(refresh_rate));
-    writeln!(log_file, "{}", output).expect("Failed to write to log file");
+  fn update(&mut self, message: Message) -> Command<Message> {
+      match message {
+          Message::SortByName => {
+              self.processes.sort_by(|a, b| a.name.cmp(&b.name));
+          }
+          Message::SortByPid => {
+              self.processes.sort_by_key(|p| p.pid);
+          }
+          Message::SortByUser => {
+            self.processes.sort_by_key(|p| p.user.clone());
+          }
+          Message::SortByPriority => {
+            self.processes.sort_by_key(|p| p.priority);
+          }
+          Message::SortByMemory => {
+            self.processes.sort_by_key(|p| p.memory);
+          }
+          Message::SortByVMSize => {
+            self.processes.sort_by_key(|p| p.virtual_memory);
+          }
+          Message::SortByState => {
+            self.processes.sort_by_key(|p| p.state);
+          }
+          Message::SortByThreads => {
+            self.processes.sort_by_key(|p| p.thread_count);
+          }
+          Message::SortByUserTime => {
+            self.processes.sort_by_key(|p| p.user_time);
+          }
+          Message::SortBySystemTime => {
+            self.processes.sort_by_key(|p| p.system_time);
+          }
+          Message::SearchInputChanged(input) => {
+              self.search_input = input;
+          }
+          Message::SearchProcess => {
+              // Placeholder for search logic
+          }
+          Message::ShowProcessTree => {
+              // TODO: Implement process tree view
+          }
+          Message::NiceProcess => {
+              if let Some(pid) = self.selected_process_pid {
+                  let _ = pro::set_priority(pid, 10);
+              }
+          }
+          Message::KillProcess => {
+              if let Some(pid) = self.selected_process_pid {
+                  let _ = pro::kill_process(pid, libc::SIGTERM);
+              }
+          }
+          Message::RefreshProcesses => {
+              if let Ok(new_processes) = pro::read_processes() {
+                  self.processes = new_processes;
+              }
+          }
+          Message::Quit => {
+              return Command::none();
+          }
+          Message::Tick => {
+              return Command::batch(vec![
+                  Command::perform(async { 
+                      pro::read_processes().ok() 
+                  }, |processes| Message::RefreshProcesses)
+              ]);
+          }
+      }
+      Command::none()
   }
+
+  fn view(&self) -> Element<Message> {
+      let system_info = self.render_system_info();
+      let process_table = self.render_process_table();
+      let action_buttons = self.render_action_buttons();
+      
+      let content = column![
+          system_info,
+          process_table,
+          action_buttons
+      ]
+      .spacing(10)
+      .padding(10);
+
+      container(content)
+          .width(Length::Fill)
+          .height(Length::Fill)
+          .center_x()
+          .center_y()
+          .into()
+  }
+}
+
+impl ProcessManagerApp {
+  fn render_system_info(&self) -> Element<Message> {
+      let system_info = pro::get_sysinfo();
+      let cpu_usages = pro::get_cpu_usage().unwrap_or_default();
+      let mem_unit = 1_000_000 / system_info.mem_unit as u64;
+
+      let info_text = column![
+          text(format!("Total RAM: {}", system_info.totalram / mem_unit)),
+          text(format!("Shared RAM: {}", system_info.sharedram / mem_unit)),
+          text(format!("Free RAM: {}", system_info.freeram / mem_unit)),
+          text(format!("Buffer RAM: {}", system_info.bufferram / mem_unit)),
+          text(format!("Total Swap: {}", system_info.totalswap / mem_unit)),
+          text(format!("Free Swap: {}", system_info.freeswap / mem_unit)),
+          text(format!("Uptime: {}", system_info.uptime)),
+          text(format!("Loads: {:?}", system_info.loads)),
+          text("CPU Usage:"),
+          text(format!("Total: {:.2}%", cpu_usages.first().unwrap_or(&0.0))),
+      ]
+      .spacing(5);
+
+      container(info_text)
+          .padding(10)
+          .into()
+  }
+
+  fn render_process_table(&self) -> Element<Message> {
+    let processes_list = self.processes.iter().map(|process| 
+        row![
+            text(&process.user),
+            text(&process.pid.to_string()),
+            text(&process.memory),
+            text(&process.priority),
+            text(&process.state),
+            text(&process.thread_count),
+            text(&process.virtual_memory),
+            text(&process.user_time),
+            text(&process.system_time),
+            text(&process.name),
+        ]
+        .spacing(35)
+        .padding(10)
+        .into()
+    ).collect::<Vec<Element<Message>>>();
+
+    let header = row![
+        button("User").on_press(Message::SortByUser),
+        button("PID").on_press(Message::SortByPid),
+        button("Memory(MB)").on_press(Message::SortByMemory),
+        button("Priority").on_press(Message::SortByPriority),
+        button("State").on_press(Message::SortByState),
+        button("Threads").on_press(Message::SortByThreads),
+        button("VIRT_MEM(MB)").on_press(Message::SortByVMSize),
+        button("U_time").on_press(Message::SortByUserTime),
+        button("S_time").on_press(Message::SortBySystemTime),
+        button("Name").on_press(Message::SortByName),
+    ]
+    .spacing(15)
+    .align_items(Alignment::Center);
+
+    let scrollable_processes = Scrollable::new(column(processes_list).spacing(5))
+        .width(Length::Fill)
+        .height(Length::Fill);
+
+    column![
+        header,
+        scrollable_processes
+    ]
+    .padding(10)
+    .into()
+  }
+
+  fn render_action_buttons(&self) -> Element<Message> {
+      let buttons = row![
+          button("Help").on_press(Message::Quit),
+          button("Tree").on_press(Message::ShowProcessTree),
+          text_input("Search", &self.search_input)
+              .on_input(Message::SearchInputChanged)
+              .on_submit(Message::SearchProcess),
+          button("Nice").on_press(Message::NiceProcess),
+          button("Kill").on_press(Message::KillProcess),
+          button("Quit").on_press(Message::Quit)
+      ]
+      .spacing(10)
+      .align_items(Alignment::Center);
+
+      container(buttons)
+          .padding(10)
+          .center_x()
+          .into()
+  }
+}
+
+// Add main function
+fn main() -> iced::Result {
+  ProcessManagerApp::run(Settings::default())
 }

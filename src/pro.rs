@@ -9,17 +9,17 @@ use std::io::{BufRead, BufReader};
 
 #[derive(Clone)]
 pub struct ProcessInfo {
-  user: String,
+  pub user: String,
   pub pid: pid_t,
-  ppid: pid_t,
-  name: String,
-  state: char,
-  memory: u64,
-  thread_count: u64,
-  virtual_memory: u64,
-  user_time: u64,
-  system_time: u64,
-  priority: i32,
+  pub ppid: pid_t,
+  pub name: String,
+  pub state: char,
+  pub memory: u64,
+  pub thread_count: u64,
+  pub virtual_memory: u64,
+  pub user_time: u64,
+  pub system_time: u64,
+  pub priority: i32,
 }
 
 fn get_username_from_uid(target_uid: u32) -> Option<String> {
