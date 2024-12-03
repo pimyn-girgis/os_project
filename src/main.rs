@@ -1,7 +1,8 @@
 use iced::widget::{button, column, container, row, text, text_input, Scrollable, Space};
 use iced::{Alignment, Element, Length, Application, Command, Settings, Subscription};
 use libc::pid_t;
-use std::time::{Duration, Instant};
+use std::sync::{mpsc, Arc, Mutex};
+use std::thread;
 
 mod pro;
 
@@ -14,6 +15,7 @@ struct ProcessManagerApp {
     search_input: String,
     selected_process_pid: Option<pid_t>,
     show_help: bool,
+    receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
 }
 
 #[derive(Debug, Clone)]
@@ -38,7 +40,7 @@ enum Message {
     ProcessSelected(pid_t),
     Help,
     CloseHelp,
-    Tick(Instant),
+    Tick,
 }
 
 impl Application for ProcessManagerApp {
@@ -49,6 +51,28 @@ impl Application for ProcessManagerApp {
 
     fn new(_flags: ()) -> (Self, Command<Message>) {
         let processes = pro::read_processes().unwrap_or_default();
+
+        let (sender, receiver) = mpsc::channel();
+
+        // Wrap the receiver in Arc<Mutex<_>> for shared access
+        let receiver = Arc::new(Mutex::new(receiver));
+
+        // Clone the Arc to move into the thread
+        let thread_receiver = receiver.clone();
+
+        // Spawn a background thread to send Tick messages every 2 seconds
+        thread::spawn(move || {
+            loop {
+                unsafe {
+                    libc::sleep(2); // Sleep for 2 seconds
+                }
+                if sender.send(Message::Tick).is_err() {
+                    // If the receiver has been dropped, exit the loop
+                    break;
+                }
+            }
+        });
+
         let mut app = Self {
             processes: processes.clone(),
             filtered_processes: processes,
@@ -57,9 +81,12 @@ impl Application for ProcessManagerApp {
             search_input: String::new(),
             selected_process_pid: None,
             show_help: false,
+            receiver: thread_receiver,
         };
         app.apply_filters_and_sorting();
-        (app, Command::none())
+        let command = Self::listen_for_tick(Arc::clone(&receiver));
+        (app, command)
+        //(app, Self::listen_for_tick())
     }
 
     fn title(&self) -> String {
@@ -203,12 +230,14 @@ impl Application for ProcessManagerApp {
             Message::CloseHelp => {
                 self.show_help = false;
             }
-            Message::Tick(_instant) => {
-                // Periodic update
-                if let Ok(new_processes) = pro::read_processes() {
-                    self.processes = new_processes;
-                    self.apply_filters_and_sorting();
-                }
+            Message::Tick => {
+              // Periodic update
+              if let Ok(new_processes) = pro::read_processes() {
+                  self.processes = new_processes;
+                  self.apply_filters_and_sorting();
+              }
+              // Schedule the next Tick
+              return Self::listen_for_tick(Arc::clone(&self.receiver));
             }
         }
         Command::none()
@@ -270,6 +299,20 @@ impl Application for ProcessManagerApp {
 }
 
 impl ProcessManagerApp {
+    fn listen_for_tick(receiver: Arc<Mutex<mpsc::Receiver<Message>>>) -> Command<Message> {
+      // Spawn a blocking task to wait for Tick
+      Command::perform(async move {
+          // Run recv in a blocking thread
+          let receiver = Arc::clone(&receiver);
+          let msg = thread::spawn(move || {
+              let lock = receiver.lock().unwrap();
+              lock.recv().unwrap()
+          })
+          .join()
+          .unwrap();
+          msg
+      }, |msg| msg)
+    }
     fn apply_filters_and_sorting(&mut self) {
         // Filter processes according to self.search_input
         if self.search_input.is_empty() {
@@ -445,8 +488,8 @@ impl iced::widget::button::StyleSheet for RegularRowStyle {
         iced::widget::button::Appearance {
             background: Some(iced::Color::from_rgb(0.95, 0.95, 0.95).into()),
             border: Default::default(),
-            shadow_offset: Default::default(), // Added this line
-            shadow: Default::default(),        // Added this line
+            shadow_offset: Default::default(),
+            shadow: Default::default(),
             text_color: iced::Color::BLACK,
         }
     }
