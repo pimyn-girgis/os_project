@@ -33,7 +33,6 @@ enum Message {
     SortByMemory,
     SearchInputChanged(String),
     SearchProcess,
-    ShowProcessTree,
     NiceProcess,
     KillProcess,
     Quit,
@@ -194,14 +193,6 @@ impl Application for ProcessManagerApp {
             Message::SearchProcess => {
                 self.apply_filters_and_sorting();
             }
-            Message::ShowProcessTree => {
-                // Implement process tree view
-                if let Some(root_pid) = self.selected_process_pid {
-                    let tree = pro::build_tree(&self.processes, root_pid);
-                    println!("Process Tree for PID {}:", root_pid);
-                    tree.print(0);
-                }
-            }
             Message::NiceProcess => {
                 if let Some(pid) = self.selected_process_pid {
                     pro::set_priority(pid, 10);
@@ -259,7 +250,6 @@ impl Application for ProcessManagerApp {
                 text("Then you can kill or nice the selected process.").size(20),
                 text("Buttons:").size(20),
                 text("- Help: Show this help message.").size(16),
-                text("- Tree: Display the process tree starting from the selected process.").size(16),
                 text("- Nice: Change the priority of the selected process.").size(16),
                 text("- Kill: Terminate the selected process.").size(16),
                 text("- Refresh: Manually refresh the process list.").size(16),
@@ -357,6 +347,12 @@ impl ProcessManagerApp {
         let cpu_usages = pro::get_cpu_usage().unwrap_or_default();
         let mem_unit = 1_000_000 / system_info.mem_unit as u64;
 
+        let total_cpu = if let Some(&usage) = cpu_usages.first() {
+          usage
+        } else {
+            0.0
+        };
+
         let info_text = column![
             text(format!("Total RAM: {} MB", system_info.totalram / mem_unit)),
             text(format!("Shared RAM: {} MB", system_info.sharedram / mem_unit)),
@@ -367,7 +363,7 @@ impl ProcessManagerApp {
             text(format!("Uptime: {} seconds", system_info.uptime)),
             text(format!("Loads: {:?}", system_info.loads)),
             text("CPU Usage:"),
-            text(format!("Total: {:.2}%", cpu_usages.first().unwrap_or(&0.0))),
+            text(format!("Total: {:.2}%", total_cpu)),
         ]
         .spacing(5);
 
@@ -439,7 +435,6 @@ impl ProcessManagerApp {
     fn render_action_buttons(&self) -> Element<Message> {
         let buttons = row![
             button("Help").on_press(Message::Help),
-            button("Tree").on_press(Message::ShowProcessTree),
             text_input("Search", &self.search_input)
                 .on_input(Message::SearchInputChanged)
                 .on_submit(Message::SearchProcess)
@@ -462,9 +457,9 @@ impl ProcessManagerApp {
     fn render_cpu_usage_graph(&self) -> Element<Message> {
       // Create a bar-like representation of CPU usage
       let cpu_bars = self.cpu_usages.iter().enumerate().map(|(i, &usage)| {
-          let bar_height = (usage / 100.0) * 200.0; // Maximum height of 200 pixels
+          let bar_height = (usage / 100.0) * 150.0; // Maximum height of 200 pixels
           let bar_color = if i == 0 {
-              iced::Color::from_rgb(0.2, 0.4, 0.8) // Total CPU in a different color
+              iced::Color::from_rgb(0.2, 0.6, 0.8) // Total CPU in a different color
           } else {
               iced::Color::from_rgb(0.4, 0.6, 1.0)
           };
@@ -477,14 +472,16 @@ impl ProcessManagerApp {
           };
   
           column![
-              container(Space::new(Length::Fixed(40.0), Length::Fixed((200.0 - bar_height) as f32)))
+              container(Space::new(Length::Fixed(20.0), Length::Fixed((150.0 - bar_height) as f32)))
                   .style(iced::theme::Container::Custom(Box::new(EmptyCpuBarStyle))),
-              container(Space::new(Length::Fixed(40.0), Length::Fixed(bar_height as f32)))
+              container(Space::new(Length::Fixed(20.0), Length::Fixed(bar_height as f32)))
                   .style(iced::theme::Container::Custom(Box::new(CpuBarStyle { color: bar_color }))),
               text(label)
                   .horizontal_alignment(iced::alignment::Horizontal::Center)
+                  .size(12),
           ]
-          .width(Length::Fixed(60.0))
+          .width(Length::Fixed(20.0))
+          .spacing(2)
           .into()
       }).collect::<Vec<Element<Message>>>();
   
@@ -492,12 +489,16 @@ impl ProcessManagerApp {
           .spacing(10)
           .align_items(Alignment::End);
   
-      container(column![
-          text("CPU Usage").size(20),
-          cpu_graph_container
-      ])
-      .padding(10)
-      .into()
+      let cpu_graph = column![
+        text("CPU Usage").size(16).horizontal_alignment(iced::alignment::Horizontal::Center),
+        cpu_graph_container
+      ]
+      .spacing(10)
+      .padding(10);
+  
+      container(cpu_graph)
+          .style(iced::theme::Container::Box) // Add a border or background if desired
+          .into()
     }
 }
 
