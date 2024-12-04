@@ -1,12 +1,12 @@
 use std::env;
 use std::io;
 pub mod pro;
-// mod cli;
+mod cli;
 mod tui;
 
 fn main() -> io::Result<()> {
   if env::args().len() > 1 {
-    // cli::run()?
+    cli::run()?
   } else {
     tui::run()?
   }

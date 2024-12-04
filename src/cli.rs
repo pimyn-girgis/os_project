@@ -1,12 +1,12 @@
-use std::io;
+use crate::pro;
 use core::panic;
 use getopts::Options;
 use libc::{self, pid_t};
 use std::fs;
+use std::io;
 use std::io::Write;
 use std::process::exit;
 use std::time::Duration;
-use crate::pro;
 
 pub fn make_opts() -> Options {
   let mut opts = Options::new();
@@ -121,18 +121,17 @@ pub fn run() -> io::Result<()> {
       let kill_signal = matches
         .opt_get_default::<i32>("k", libc::SIGKILL)
         .expect("Invalid signal value");
-      // pro::kill_process(pid, kill_signal);
-      pro::execute_on_with_arg(pids, kill_signal, pro::kill_process);
+      pro::execute_on_with_arg(pids, kill_signal, pro::kill_process, None);
     } else if matches.opt_present("p") {
       let priority = matches.opt_get_default::<i32>("p", 0).expect("Invalid priority value");
-      pro::execute_on_with_arg(pids, priority, pro::set_priority);
+      pro::execute_on_with_arg(pids, priority, pro::set_priority, None);
     } else if matches.opt_present("c") {
       let cpu_list: Vec<usize> = matches
         .opt_get_default::<String>("c", "".to_string())
         .iter()
         .map(|arg| arg.parse::<usize>().expect("Invalid CPU value"))
         .collect();
-      pro::execute_on_with_args::<usize>(pids, &cpu_list, pro::bind_to_cpu_set);
+      pro::execute_on_with_args(pids, &cpu_list, pro::bind_to_cpu_set, None);
     }
     return Ok(());
   }
@@ -148,9 +147,11 @@ pub fn run() -> io::Result<()> {
         &filter_by,
         &pattern,
         exact_match,
-      ).unwrap(),
+      )
+      .unwrap(),
       0,
-    ).print(0);
+    )
+    .print(0);
 
     return Ok(());
   }
@@ -168,3 +169,4 @@ pub fn run() -> io::Result<()> {
 
   Ok(())
 }
+
