@@ -1,5 +1,5 @@
 use iced::widget::{button, column, container, row, text, text_input, Scrollable, Space};
-use iced::{Alignment, Element, Length, Application, Command, Settings, Subscription};
+use iced::{Alignment, Element, Length, Application, Command, Settings};
 use libc::pid_t;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
@@ -16,6 +16,7 @@ struct ProcessManagerApp {
     selected_process_pid: Option<pid_t>,
     show_help: bool,
     receiver: Arc<Mutex<mpsc::Receiver<Message>>>,
+    cpu_usages: Vec<f64>,
 }
 
 #[derive(Debug, Clone)]
@@ -51,6 +52,7 @@ impl Application for ProcessManagerApp {
 
     fn new(_flags: ()) -> (Self, Command<Message>) {
         let processes = pro::read_processes().unwrap_or_default();
+        let cpu_usages = pro::get_cpu_usage().unwrap_or_default();
 
         let (sender, receiver) = mpsc::channel();
 
@@ -82,15 +84,15 @@ impl Application for ProcessManagerApp {
             selected_process_pid: None,
             show_help: false,
             receiver: thread_receiver,
+            cpu_usages,
         };
         app.apply_filters_and_sorting();
         let command = Self::listen_for_tick(Arc::clone(&receiver));
         (app, command)
-        //(app, Self::listen_for_tick())
     }
 
     fn title(&self) -> String {
-        "Linux Process Manager".to_string()
+        "Amr El-Kady Pro".to_string()
     }
 
     fn update(&mut self, message: Message) -> Command<Message> {
@@ -236,6 +238,9 @@ impl Application for ProcessManagerApp {
                   self.processes = new_processes;
                   self.apply_filters_and_sorting();
               }
+              if let Ok(new_cpu_usages) = pro::get_cpu_usage() {
+                self.cpu_usages = new_cpu_usages;
+              }
               // Schedule the next Tick
               return Self::listen_for_tick(Arc::clone(&self.receiver));
             }
@@ -272,11 +277,18 @@ impl Application for ProcessManagerApp {
                 .into()
         } else {
             let system_info = self.render_system_info();
+            let cpu_graph = self.render_cpu_usage_graph();
             let process_table = self.render_process_table();
             let action_buttons = self.render_action_buttons();
 
-            let content = column![
+            let top_row = row![
                 system_info,
+                cpu_graph
+            ]
+            .spacing(10);
+
+            let content = column![
+                top_row,
                 process_table,
                 action_buttons
             ]
@@ -291,11 +303,6 @@ impl Application for ProcessManagerApp {
                 .into()
         }
     }
-
-    // fn subscription(&self) -> Subscription<Message> {
-    //     // Implement periodic refresh using a custom subscription
-    //     iced::time::every(Duration::from_secs(2)).map(Message::Tick)
-    // }
 }
 
 impl ProcessManagerApp {
@@ -450,6 +457,79 @@ impl ProcessManagerApp {
             .padding(10)
             .center_x()
             .into()
+    }
+
+    fn render_cpu_usage_graph(&self) -> Element<Message> {
+      // Create a bar-like representation of CPU usage
+      let cpu_bars = self.cpu_usages.iter().enumerate().map(|(i, &usage)| {
+          let bar_height = (usage / 100.0) * 200.0; // Maximum height of 200 pixels
+          let bar_color = if i == 0 {
+              iced::Color::from_rgb(0.2, 0.4, 0.8) // Total CPU in a different color
+          } else {
+              iced::Color::from_rgb(0.4, 0.6, 1.0)
+          };
+  
+          // Use owned Strings instead of references
+          let label = if i == 0 {
+              "Total".to_string()
+          } else {
+              format!("Core {}", i-1)
+          };
+  
+          column![
+              container(Space::new(Length::Fixed(40.0), Length::Fixed((200.0 - bar_height) as f32)))
+                  .style(iced::theme::Container::Custom(Box::new(EmptyCpuBarStyle))),
+              container(Space::new(Length::Fixed(40.0), Length::Fixed(bar_height as f32)))
+                  .style(iced::theme::Container::Custom(Box::new(CpuBarStyle { color: bar_color }))),
+              text(label)
+                  .horizontal_alignment(iced::alignment::Horizontal::Center)
+          ]
+          .width(Length::Fixed(60.0))
+          .into()
+      }).collect::<Vec<Element<Message>>>();
+  
+      let cpu_graph_container = row(cpu_bars)
+          .spacing(10)
+          .align_items(Alignment::End);
+  
+      container(column![
+          text("CPU Usage").size(20),
+          cpu_graph_container
+      ])
+      .padding(10)
+      .into()
+    }
+}
+
+struct CpuBarStyle {
+  color: iced::Color,
+}
+
+impl iced::widget::container::StyleSheet for CpuBarStyle {
+  type Style = iced::Theme;
+
+  fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+      iced::widget::container::Appearance {
+          background: Some(self.color.into()),
+          border: Default::default(),
+          shadow: Default::default(),
+          text_color: None,
+      }
+  }
+}
+
+struct EmptyCpuBarStyle;
+
+impl iced::widget::container::StyleSheet for EmptyCpuBarStyle {
+    type Style = iced::Theme;
+
+    fn appearance(&self, _style: &Self::Style) -> iced::widget::container::Appearance {
+        iced::widget::container::Appearance {
+            background: Some(iced::Color::from_rgb(0.9, 0.9, 0.9).into()),
+            border: Default::default(),
+            shadow: Default::default(),
+            text_color: None,
+        }
     }
 }
 
