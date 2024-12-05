@@ -1,10 +1,9 @@
+use crate::pro;
 use iced::widget::{button, column, container, row, text, text_input, Scrollable, Space};
 use iced::{Alignment, Application, Command, Element, Length, Settings};
 use libc::pid_t;
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread;
-
-mod pro;
 
 // Main application state
 struct ProcessManagerApp {
@@ -195,13 +194,13 @@ impl Application for ProcessManagerApp {
       }
       Message::NiceProcess => {
         if let Some(pid) = self.selected_process_pid {
-          pro::set_priority(pid, 10);
+          pro::set_priority(pid, 10, None);
           println!("Changed priority of process {}", pid);
         }
       }
       Message::KillProcess => {
         if let Some(pid) = self.selected_process_pid {
-          pro::kill_process(pid, libc::SIGTERM);
+          pro::kill_process(pid, libc::SIGTERM, None);
           println!("Sent SIGTERM to process {}", pid);
         }
       }
@@ -372,14 +371,14 @@ impl ProcessManagerApp {
       .map(|process| {
         let row_content = row![
           text(&process.user).width(Length::FillPortion(1)),
-          text(&process.pid.to_string()).width(Length::FillPortion(1)),
-          text(&(process.memory / 1000).to_string()).width(Length::FillPortion(1)),
-          text(&process.priority.to_string()).width(Length::FillPortion(1)),
-          text(&process.state.to_string()).width(Length::FillPortion(1)),
-          text(&process.thread_count.to_string()).width(Length::FillPortion(1)),
-          text(&(process.virtual_memory / 1000).to_string()).width(Length::FillPortion(1)),
-          text(&process.user_time.to_string()).width(Length::FillPortion(1)),
-          text(&process.system_time.to_string()).width(Length::FillPortion(1)),
+          text(process.pid.to_string()).width(Length::FillPortion(1)),
+          text((process.memory / 1000).to_string()).width(Length::FillPortion(1)),
+          text(process.priority.to_string()).width(Length::FillPortion(1)),
+          text(process.state.to_string()).width(Length::FillPortion(1)),
+          text(process.thread_count.to_string()).width(Length::FillPortion(1)),
+          text((process.virtual_memory / 1000).to_string()).width(Length::FillPortion(1)),
+          text(process.user_time.to_string()).width(Length::FillPortion(1)),
+          text(process.system_time.to_string()).width(Length::FillPortion(1)),
           text(&process.name).width(Length::FillPortion(3)),
         ]
         .spacing(15)
@@ -589,6 +588,6 @@ impl iced::widget::button::StyleSheet for RegularRowStyle {
   }
 }
 
-fn main() -> iced::Result {
+pub fn run() -> iced::Result {
   ProcessManagerApp::run(Settings::default())
 }
