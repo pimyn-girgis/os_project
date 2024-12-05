@@ -338,7 +338,7 @@ pub fn get_cpu_usage() -> io::Result<Vec<f64>> {
     for line in content.lines() {
       if line.starts_with("cpu") {
         let values: Vec<&str> = line.split_whitespace().collect();
-        let total: u64 = values[1..].iter().take(7).map(|&s| s.parse::<u64>().unwrap_or(0)).sum();
+        let total: u64 = values[1..].iter().map(|&s| s.parse::<u64>().unwrap_or(0)).sum();
         let idle: u64 = values[4].parse().unwrap_or(0);
         stats.push((total, idle));
       }

@@ -3,6 +3,7 @@ use core::fmt;
 use crossterm::event::{self, Event, KeyCode, KeyEvent, KeyEventKind};
 use humansize::{format_size, BINARY};
 use libc::sysinfo;
+use plotters_iced::sample::lttb::LttbSource;
 use ratatui::{
   layout::{Constraint, Layout},
   prelude::Backend,
@@ -223,14 +224,16 @@ impl App {
 
   fn update_cpu_info(&mut self) {
     if let Ok(usage) = pro::get_cpu_usage() {
-      self.cpu_usage = usage;
+      if usage.is_empty() {
+        return
+      }
+      self.cpu_usage = usage[1..].to_vec();
 
       if self.cpu_history.len() >= 100 {
         self.cpu_history.remove(0);
       }
 
-      let avg_usage = self.cpu_usage.iter().sum::<f64>() / self.cpu_usage.len() as f64;
-      self.cpu_history.push((self.cpu_history.len() as f64, avg_usage));
+        self.cpu_history.push((self.cpu_history.len() as f64, usage[0]));
     }
   }
 
@@ -749,7 +752,7 @@ impl App {
           chunks[0],
         );
 
-        let num_cores = self.cpu_usage.len() - 1;
+        let num_cores = self.cpu_usage.len();
         let num_rows = (num_cores + 3) / 4;
         let gauge_constraints = vec![Constraint::Percentage(25); 4];
 
@@ -760,7 +763,7 @@ impl App {
           let cores_in_row = Layout::horizontal(gauge_constraints.clone()).split(core_rows[row]);
 
           for col in 0..4 {
-            let core_idx = row * 4 + col + 1;
+            let core_idx = row * 4 + col;
             if core_idx <= num_cores {
               if let Some(&usage) = self.cpu_usage.get(core_idx) {
                 frame.render_widget(
