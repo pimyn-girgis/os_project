@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Process Manager</title>
+    <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <div class="navbar">
+        <button onclick="showCard('systemOverviewCard')">System Overview</button>
+        <button onclick="showCard('cpuUsageCard')">CPU Usage</button>
+        <button onclick="showCard('memoryUsageCard')">Memory Usage</button>
+        <button onclick="showCard('processManagementCard')">Process Management</button>
+    </div>
+
+    <div class="container">
+        <div class="main-content">
+            <div class="card" id="systemOverviewCard">
+                <h2><i class="fa-solid fa-info-circle"></i> System Overview</h2>
+                <div id="systemOverview">Loading system stats...</div>
+            </div>
+
+            <div class="card" id="cpuUsageCard">
+                <h2><i class="fa-solid fa-microchip"></i> CPU Usage</h2>
+                <canvas id="cpuChart" class="chart-container"></canvas>
+                <div class="cpu-cores" id="cpuCores">Loading CPU cores...</div>
+            </div>
+
+            <div class="card" id="memoryUsageCard">
+                <h2><i class="fa-solid fa-memory"></i> Memory Usage</h2>
+                <canvas id="memoryChart" class="chart-container"></canvas>
+            </div>
+
+            <div class="card" id="processManagementCard">
+                <h2><i class="fa-solid fa-tasks"></i> Process Management</h2>
+                <div class="controls">
+                    <select id="sortBy">
+                        <option value="pid">Sort by PID</option>
+                        <option value="name">Sort by Name</option>
+                        <option value="memory">Sort by Memory</option>
+                        <option value="priority">Sort by Priority</option>
+                    </select>
+                    <select id="filterBy">
+                        <option value="pid">Filter by PID</option>
+                        <option value="ppid">Filter by PPID</option>
+                        <option value="name">Filter by Name</option>
+                        <option value="user">Filter by User</option>
+                        <option value="state">Filter by State</option>
+                    </select>
+                    <label>
+                        <input id="is_ascending" type="checkbox" checked> Ascending
+                    </label>
+                    <input type="text" id="filterProcess" placeholder="Filter Processes">
+                    <button class="btn" onclick="loadProcesses()">Refresh</button>
+                </div>
+                <table id="processTable">
+                    <thead>
+                        <tr>
+                            <th>PID</th>
+                            <th>PPID</th>
+                            <th>Name</th>
+                            <th>State</th>
+                            <th>Memory</th>
+                            <th>Threads</th>
+                            <th>Virtual Memory</th>
+                            <th>User Time</th>
+                            <th>System Time</th>
+                            <th>Priority</th>
+                            <th >Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="processList"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/3.7.1/chart.min.js"></script>
+   
+   <script src="main.js"></script>
+</body>
+</html>
